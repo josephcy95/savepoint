@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Download, ImagePlus, Trash2, Wand2, X } from "lucide-react";
-import { api, type Game, type IgdbHit } from "../lib/api.ts";
-import { useMeta, useMutate } from "../lib/queries.ts";
+import { api, type Game, type LookupHit, type LookupResult } from "../lib/api.ts";
+import { useMutate } from "../lib/queries.ts";
 import { Modal, ModalHead, Field, useDebounced, Toggle } from "./ui.tsx";
 import { Cover } from "./Cover.tsx";
 import { toast } from "../lib/toast.ts";
+import { SOURCE_LABEL } from "../lib/meta.ts";
 
 const list = (s: string) => s.split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
 const linksToText = (l: Record<string, string>) => Object.entries(l).map(([k, v]) => `${k}: ${v}`).join("\n");
@@ -20,7 +21,6 @@ const textToLinks = (s: string) =>
 
 export function DetailsDialog({ open, onClose, game }: { open: boolean; onClose: () => void; game: Game }) {
   const [, nav] = useLocation();
-  const { data: meta } = useMeta();
   const [f, setF] = useState(() => init(game));
   const file = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -139,12 +139,14 @@ export function DetailsDialog({ open, onClose, game }: { open: boolean; onClose:
                 <option value="">Unknown</option>
                 <option value="manual">Manual</option>
                 <option value="agent">Agent</option>
+                <option value="steam">Steam</option>
+                <option value="appstore">App Store</option>
                 <option value="igdb">IGDB</option>
               </select>
             </Field>
           </div>
         </div>
-        {meta?.igdb && <IgdbMatch game={game} />}
+        <LookupMatch game={game} />
         <div className="mt-6 flex items-center justify-between gap-2 border-t border-ridge pt-4">
           <button type="button" onClick={() => confirm(`Delete ${game.title} and all its chapters? This can't be undone.`) && del.mutate(undefined)} className="btn btn-ghost btn-danger">
             <Trash2 size={14} /> Delete game
@@ -163,30 +165,35 @@ export function DetailsDialog({ open, onClose, game }: { open: boolean; onClose:
   );
 }
 
-function IgdbMatch({ game }: { game: Game }) {
+function LookupMatch({ game }: { game: Game }) {
   const [q, setQ] = useState(game.title);
   const [overwrite, setOverwrite] = useState(false);
   const dq = useDebounced(q.trim(), 300);
-  const res = useQuery({ queryKey: ["igdb", dq], queryFn: () => api<IgdbHit[]>(`/api/igdb/search?q=${encodeURIComponent(dq)}&limit=5`), enabled: dq.length > 1 });
-  const enrich = useMutate((igdb_id: number) => api(`/api/games/${game.id}/enrich`, { method: "POST", json: { igdb_id, overwrite } }), { success: "Pulled details from IGDB" });
+  const res = useQuery({ queryKey: ["lookup", dq], queryFn: () => api<LookupResult>(`/api/lookup?q=${encodeURIComponent(dq)}&limit=6`), enabled: dq.length > 1, staleTime: 5 * 60_000 });
+  const enrich = useMutate((h: LookupHit) => api(`/api/games/${game.id}/enrich`, { method: "POST", json: { ref: h.ref, overwrite } }), {
+    success: "Filled in the details",
+  });
   return (
     <div className="mt-6 rounded-xl border border-ridge bg-void/50 p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-[13px] font-medium">
-          <Wand2 size={14} className="text-ember" /> Fill from IGDB
+          <Wand2 size={14} className="text-ember" /> Fill from Steam or the App Store
         </div>
         <Toggle checked={overwrite} onChange={setOverwrite} label="Overwrite existing" />
       </div>
-      <input value={q} onChange={(e) => setQ(e.target.value)} className="field mb-2" placeholder="Search IGDB" />
+      <input value={q} onChange={(e) => setQ(e.target.value)} className="field mb-2" placeholder="Search by title" aria-label="Search the stores" />
       <div className="space-y-1">
-        {res.data?.map((h) => (
-          <button key={h.igdb_id} type="button" onClick={() => enrich.mutate(h.igdb_id)} disabled={enrich.isPending} className="flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left hover:bg-plate">
+        {res.data?.hits.map((h) => (
+          <button key={h.ref} type="button" onClick={() => enrich.mutate(h)} disabled={enrich.isPending} className="flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left hover:bg-plate">
             <Cover title={h.title} url={h.cover_url} className="w-7 shrink-0" rounded="rounded" />
-            <span className="min-w-0 flex-1 truncate text-[13px]">{h.title}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[13px]">{h.title}</span>
+              <span className="block truncate font-mono text-[10.5px] text-dim">{[SOURCE_LABEL[h.source], h.developer].filter(Boolean).join(" · ")}</span>
+            </span>
             <span className="font-mono text-[11px] text-dim">{h.release_year}</span>
-            {game.igdb_id === h.igdb_id && <span className="chip h-5 text-[10.5px] text-laurel">linked</span>}
           </button>
         ))}
+        {res.data && !res.data.hits.length && <p className="px-2 py-2 text-[12.5px] text-dim">No store has this one. Fill it in by hand, or ask an agent to research it.</p>}
       </div>
     </div>
   );

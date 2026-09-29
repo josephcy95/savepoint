@@ -24,7 +24,7 @@ Savepoint is built for one person and their agents:
 - **Play that happens in stretches.** Minecraft in 2012, again in 2017, again now. Each stretch is its own chapter with dates, platform, hours and a note, and they show up on a lifeline across your years.
 - **Why you liked it.** Half-step star ratings, a one-line verdict, what worked, what didn't, and tags marked liked or disliked (`+story`, `-grind`), so agents can spot patterns.
 - **Where you play.** Every game gets a platform bucket (PC only, mobile only, PC + console, everywhere…), and you say which platforms you actually use, so recommendations stay on hardware you own.
-- **Any game, not just what's in a database.** MMOs, mobile gacha, Chinese-only releases. IGDB autofill is optional; agents can research and fill in metadata and covers themselves.
+- **Any game, not just what's in a database.** Details and cover art come from Steam and the App Store (including the China store) with no account or key. For anything else, like console exclusives or delisted games, agents research it and fill it in.
 
 Recommendations happen in your agent's chat, not in the app. Savepoint just gives the agent the full picture.
 
@@ -63,7 +63,7 @@ All optional.
 | `API_TOKEN` | Require `Authorization: Bearer <token>` for `/api` and `/mcp`. Set this before exposing it through a Cloudflare tunnel or similar. |
 | `UI_PASSWORD` | Password screen for the web UI (90-day cookie). The API token also works as a password. |
 | `PUBLIC_URL` | External URL used in the docs and copy-paste snippets. Auto-detected otherwise. |
-| `IGDB_CLIENT_ID` / `IGDB_CLIENT_SECRET` | A free [Twitch developer app](https://api-docs.igdb.com/#account-creation). Enables IGDB search when logging, plus metadata and cover autofill. |
+| `IGDB_CLIENT_ID` / `IGDB_CLIENT_SECRET` | Optional extra lookup source for console-only games. Needs a [Twitch developer app](https://api-docs.igdb.com/#account-creation). Steam and App Store lookup work without it. |
 | `PORT`, `DATA_DIR` | Default `8787` and `/data`. |
 
 With nothing set, anyone who can reach the port can read and write the journal. That's fine on a home network or Tailscale.
@@ -136,15 +136,15 @@ Then ask things like:
 | Write | `add_game`, `bulk_add_games`, `update_game`, `delete_game`, `set_cover` |
 | Chapters | `log_play_period`, `update_play_period`, `delete_play_period` |
 | Taste | `get_player_settings`, `update_player_settings`, `list_tags`, `manage_tag` |
-| IGDB (when configured) | `igdb_search`, `enrich_from_igdb` |
+| Metadata | `lookup_game`, `fill_from_lookup` (Steam, App Store, and IGDB if configured) |
 
 Prompts: `recommend_games`, `backfill_history`, `review_game`. Resources: `savepoint://profile`, `savepoint://guide`.
 
-Both the skill and the MCP server tell agents how to behave. They read the profile before recommending, run every candidate through `check_games`, never suggest a `not_interested` game, log rough dates without nagging for exact ones, and research metadata themselves for games IGDB doesn't have.
+Both the skill and the MCP server tell agents how to behave. They read the profile before recommending, run every candidate through `check_games`, never suggest a `not_interested` game, log rough dates without nagging for exact ones, and research metadata themselves for games no store has.
 
 ## Data model
 
-- **Game.** Title is the only required field. Alt titles (e.g. the original Chinese name), status, 0.5–5★ rating, favourite, verdict, liked, disliked, notes, plus metadata: release platforms, genres, developer, release year, description, cover, links and IGDB id.
+- **Game.** Title is the only required field. Alt titles (e.g. the original Chinese name), status, 0.5–5★ rating, favourite, verdict, liked, disliked, notes, plus metadata: release platforms, genres, developer, release year, description, cover, links and where the details came from (Steam, App Store, IGDB, an agent or you).
 - **Status.** `playing` · `finished` · `on_hold` · `dropped` · `not_interested` · `want_to_play`.
 - **Chapters.** Any number per game. Start and end year (month optional) or ongoing, platform, rough hours, how you played, a note and an optional rating for that stretch.
 - **Tags.** Per-game sentiment: `+story` (liked), `-grind` (disliked), `roguelike` (neutral). One shared vocabulary you can rename and merge.

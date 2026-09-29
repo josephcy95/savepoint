@@ -135,3 +135,27 @@ test("cover upload from base64", async () => {
   assert.match(g.cover_url, /^\/covers\/\d+-[a-f0-9]+\.png$/);
   assert.equal((await app.request(g.cover_url)).status, 200);
 });
+
+test("lookup: Steam hit fills a new game, keeps what the player wrote", async (t) => {
+  const { app } = setup();
+  const real = globalThis.fetch;
+  t.after(() => void (globalThis.fetch = real));
+  globalThis.fetch = (async (u: string | URL) => {
+    const url = String(u);
+    if (url.includes("appdetails"))
+      return Response.json({ "1145360": { success: true, data: { name: "Hades™", developers: ["Supergiant Games"], publishers: ["Supergiant Games"], release_date: { coming_soon: false, date: "Sep 17, 2020" }, genres: [{ description: "Action" }, { description: "Indie" }], platforms: { windows: true, mac: true }, short_description: "Defy the god of the dead &amp; more." } } });
+    if (url.endsWith("/library_600x900_2x.jpg")) return new Response(null, { status: 200 });
+    throw new Error(`unexpected fetch ${url}`);
+  }) as typeof fetch;
+  const r = await app.request("/api/games", json({ title: "Hades", lookup: "steam:1145360", genres: ["Roguelike"], platforms: ["Switch"] }));
+  assert.equal(r.status, 201);
+  const { game } = await r.json();
+  assert.equal(game.developer, "Supergiant Games");
+  assert.equal(game.release_year, 2020);
+  assert.equal(game.description, "Defy the god of the dead & more.");
+  assert.deepEqual(game.genres, ["Roguelike"]);
+  assert.deepEqual(game.platforms, ["Switch", "PC", "Mac"]);
+  assert.match(game.cover_url, /1145360\/library_600x900/);
+  assert.equal(game.metadata_source, "steam");
+  assert.equal(game.links.steam, "https://store.steampowered.com/app/1145360");
+});

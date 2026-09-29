@@ -10,8 +10,8 @@ import { Store, type Actor } from "./store.ts";
 import { config, authEnabled, igdbEnabled } from "./config.ts";
 import { AppError } from "./util.ts";
 import { ListQuery, TagPatch } from "./schemas.ts";
-import { buildMcp, enrich, toolCatalog, mcpContextChars } from "./mcp.ts";
-import { fillFrom, getIgdb, searchIgdb } from "./igdb.ts";
+import { buildMcp, toolCatalog, mcpContextChars } from "./mcp.ts";
+import { searchGames, getGame, withLookup, enrichGame, sourcesEnabled, LOOKUP_SOURCES, type LookupSource } from "./lookup.ts";
 import { MIME, coversDir, deleteLocalCover, saveCover, saveCoverFromUrl } from "./covers.ts";
 import { openapi, llmsTxt } from "./docs.ts";
 import { skillMd, skillIdleChars } from "./skill.ts";
@@ -93,6 +93,7 @@ export function createApp(store: Store, dataDir = config.dataDir) {
       password_login: Boolean(config.uiPassword),
       authenticated: authorized(c),
       igdb: igdbEnabled(),
+      lookup_sources: sourcesEnabled(),
       base_url: baseUrl(c),
       mcp_url: `${baseUrl(c)}/mcp`,
       token_configured: Boolean(config.apiToken),
@@ -162,7 +163,10 @@ export function createApp(store: Store, dataDir = config.dataDir) {
 
   app.post("/api/games", async (c) => {
     let input = await body(c);
-    if (input?.igdb_id && igdbEnabled() && c.req.query("autofill") !== "0") input = fillFrom(input, await getIgdb(input.igdb_id));
+    if (input && typeof input === "object") {
+      if (!input.lookup && input.igdb_id && igdbEnabled()) input.lookup = `igdb:${input.igdb_id}`;
+      input = c.req.query("autofill") === "0" ? { ...input, lookup: undefined } : await withLookup(input);
+    }
     const out = store.create(input, actorOf(c), { allowDuplicate: ["1", "true"].includes(c.req.query("allow_duplicate") ?? "") });
     return c.json(out, 201);
   });
@@ -210,9 +214,10 @@ export function createApp(store: Store, dataDir = config.dataDir) {
     return c.json(saveCover(store, dataDir, refOf(c), new Uint8Array(await f.arrayBuffer()), f.type, actorOf(c)));
   });
   app.post("/api/games/:ref/enrich", async (c) => {
-    const { igdb_id, overwrite } = await body<{ igdb_id: number; overwrite?: boolean }>(c);
-    if (!igdb_id) throw new AppError(400, "igdb_id is required");
-    return c.json(await enrich(store, refOf(c), igdb_id, overwrite, actorOf(c)));
+    const { ref, igdb_id, overwrite } = await body<{ ref?: string; igdb_id?: number; overwrite?: boolean }>(c);
+    const r = ref ?? (igdb_id ? `igdb:${igdb_id}` : "");
+    if (!r) throw new AppError(400, 'ref is required, e.g. { "ref": "steam:1145360" }');
+    return c.json(await enrichGame(store, refOf(c), r, overwrite, actorOf(c)));
   });
 
   // ─── settings ───
@@ -247,7 +252,11 @@ export function createApp(store: Store, dataDir = config.dataDir) {
     const mode = c.req.query("mode") === "replace" ? "replace" : "merge";
     return c.json(store.importAll(await body(c), mode, actorOf(c)));
   });
-  app.get("/api/igdb/search", async (c) => c.json(await searchIgdb(c.req.query("q") ?? "", Number(c.req.query("limit") ?? 8))));
+  app.get("/api/lookup", async (c) => {
+    const sources = (c.req.queries("source") ?? []).filter((x): x is LookupSource => (LOOKUP_SOURCES as readonly string[]).includes(x));
+    return c.json(await searchGames(c.req.query("q") ?? "", { limit: Number(c.req.query("limit") ?? 8), sources }));
+  });
+  app.get("/api/lookup/:ref", async (c) => c.json(await getGame(c.req.param("ref"))));
 
   app.all("/api/*", (c) => c.json({ error: `No route ${c.req.method} ${c.req.path}` }, 404));
 

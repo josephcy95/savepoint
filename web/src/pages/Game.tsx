@@ -3,7 +3,7 @@ import { Link } from "wouter";
 import { ArrowLeft, Heart, Pencil, Plus, ExternalLink, Ban, Bot, User, Globe, Cog, ImagePlus } from "lucide-react";
 import type { GameTag, Period } from "../lib/api.ts";
 import { useGame, useLibrary, usePatchGame } from "../lib/queries.ts";
-import { statusOf, hueOf, periodText, hours, ago, cx } from "../lib/meta.ts";
+import { statusOf, hueOf, periodText, hours, ago, cx, SOURCE_LABEL } from "../lib/meta.ts";
 import { Cover } from "../components/Cover.tsx";
 import { RatingMeter, Stars } from "../components/Rating.tsx";
 import { StatusPicker } from "../components/Status.tsx";
@@ -234,7 +234,7 @@ export function GamePage({ id }: { id: string }) {
                 {g.developer && (<><dt className="text-dim">Developer</dt><dd>{g.developer}</dd></>)}
                 {g.publisher && g.publisher !== g.developer && (<><dt className="text-dim">Publisher</dt><dd>{g.publisher}</dd></>)}
                 {(g.release_date || g.release_year) && (<><dt className="text-dim">Released</dt><dd className="font-mono">{g.release_date ?? g.release_year}</dd></>)}
-                {g.metadata_source && (<><dt className="text-dim">Source</dt><dd>{g.metadata_source === "agent" ? "Researched by an agent" : g.metadata_source === "igdb" ? "IGDB" : "You"}</dd></>)}
+                {g.metadata_source && (<><dt className="text-dim">Source</dt><dd>{SOURCE_LABEL[g.metadata_source] ?? g.metadata_source}</dd></>)}
               </dl>
               {Object.keys(g.links).length > 0 && (
                 <div className="flex flex-wrap gap-1.5">

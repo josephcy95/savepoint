@@ -76,7 +76,8 @@ ${json} -X POST ${base}/api/games -d '{"title": "Raid: Shadow Legends", "status"
 - rating: 0.5–5 in half steps. Only set it when they gave an opinion.
 - tags: \`+liked\`, \`-disliked\`, bare = neutral. Reuse names from \`GET /api/tags\`.
 - platforms = everywhere it's released (TFT → PC, Mac, iOS, Android). A period's platform = where they actually played.
-- A game not in any database (mobile, China-only, indie)? Research it and fill description, genres, developer, release_year, alt_titles, with \`"metadata_source": "agent"\`. Set a cover with \`${json} -X POST ${base}/api/games/<id>/cover -d '{"url":"<direct image url>"}'\`.
+- Metadata and cover: \`${sp} "${base}/api/lookup?q=hades"\` searches Steam and the App Store. Add \`"lookup": "<ref>"\` (e.g. \`"steam:1145360"\`) to the POST above to fill details and the cover, or for an existing game \`${json} -X POST ${base}/api/games/<id>/enrich -d '{"ref":"steam:1145360"}'\`.
+- In no store (China-only, delisted)? Research it yourself with \`"metadata_source": "agent"\`, and set a cover with \`${json} -X POST ${base}/api/games/<id>/cover -d '{"url":"<direct image url>"}'\`.
 - Ask before deleting anything.
 
 ## Other endpoints

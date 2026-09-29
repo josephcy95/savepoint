@@ -14,7 +14,7 @@ export type Settings = z.infer<typeof Settings>;
 
 export const STATUSES = ["playing", "finished", "on_hold", "dropped", "not_interested", "want_to_play"] as const;
 export const SENTIMENTS = ["like", "dislike", "neutral"] as const;
-export const SOURCES = ["igdb", "agent", "manual"] as const;
+export const SOURCES = ["steam", "appstore", "igdb", "agent", "manual"] as const;
 export const SORTS = ["updated", "added", "title", "rating", "last_played", "first_played", "hours"] as const;
 
 export const STATUS_HELP: Record<(typeof STATUSES)[number], string> = {
@@ -99,6 +99,7 @@ export const GameCreate = z.object({
   tags: z.array(TagInput).max(100).optional(),
   periods: z.array(PeriodInput).max(100).optional(),
   year_played: Year.optional().describe("Shortcut for one period in this year"),
+  lookup: z.string().regex(/^(steam|appstore|igdb):([a-z]{2}:)?\d+$/).optional().describe('A lookup_game ref, e.g. "steam:1145360". Fills metadata and cover'),
 });
 export type GameCreate = z.infer<typeof GameCreate>;
 

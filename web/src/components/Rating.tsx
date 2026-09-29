@@ -29,7 +29,7 @@ export function Stars({ value, size = 12, className }: { value: number | null | 
   );
 }
 
-/** Ten half-star segments in five blocks — a HUD meter for setting a rating. */
+/** Five stars you can set in half steps: the left half of a star is .5, the right half is a whole star. */
 export function RatingMeter({ value, onChange, size = "lg" }: { value: number | null; onChange: (v: number | null) => void; size?: "lg" | "md" }) {
   const [hover, setHover] = useState<number | null>(null);
   const shown = hover ?? value ?? 0;
@@ -41,8 +41,7 @@ export function RatingMeter({ value, onChange, size = "lg" }: { value: number | 
     if (e.key === "Backspace" || e.key === "Delete") (e.preventDefault(), onChange(null));
     if (/^[1-5]$/.test(e.key)) (e.preventDefault(), onChange(Number(e.key)));
   };
-  const h = size === "lg" ? "h-7" : "h-5";
-  const w = size === "lg" ? "w-[13px]" : "w-[10px]";
+  const px = size === "lg" ? 30 : 21;
   return (
     <div className="inline-flex items-center gap-3">
       <div
@@ -55,33 +54,38 @@ export function RatingMeter({ value, onChange, size = "lg" }: { value: number | 
         aria-valuetext={value ? `${value} stars, ${RATING_WORDS[String(value)]}` : "Not rated"}
         onKeyDown={key}
         onMouseLeave={() => setHover(null)}
-        className="group inline-flex items-center gap-[5px] rounded-md p-1 -m-1"
+        className="-m-1 inline-flex items-center gap-[3px] rounded-md p-1"
       >
-        {[0, 1, 2, 3, 4].map((b) => (
-          <div key={b} className="flex gap-[2px]">
-            {[0.5, 1].map((half) => {
-              const v = b + half;
-              const on = shown >= v;
-              return (
+        {[0, 1, 2, 3, 4].map((i) => {
+          const fill = Math.max(0, Math.min(1, shown - i));
+          const preview = hover != null;
+          return (
+            <span key={i} className={cx("relative block transition-transform duration-150", preview && fill > 0 && "-translate-y-px")} style={{ width: px, height: px }}>
+              <Star size={px} strokeWidth={1.6} className="absolute inset-0 text-seam" />
+              {fill > 0 && (
+                <span className="absolute inset-y-0 left-0 overflow-hidden" style={{ width: `${fill * 100}%` }}>
+                  <Star
+                    size={px}
+                    strokeWidth={1.6}
+                    fill="currentColor"
+                    className={cx("text-ember", preview ? "opacity-80" : "drop-shadow-[0_0_8px_rgb(242_184_75/.45)]")}
+                  />
+                </span>
+              )}
+              {[0.5, 1].map((half) => (
                 <button
                   key={half}
                   type="button"
                   tabIndex={-1}
-                  aria-label={`${v} stars`}
-                  onMouseEnter={() => setHover(v)}
-                  onClick={() => set(v)}
-                  className={cx(
-                    h, w,
-                    "transition-all duration-150",
-                    half === 0.5 ? "rounded-l-[4px]" : "rounded-r-[4px]",
-                    on ? (hover != null ? "bg-ember/80" : "bg-ember shadow-[0_0_12px_-2px_rgb(242_184_75/.55)]") : "bg-ridge group-hover:bg-seam/70",
-                  )}
-                  style={{ transform: on && hover != null ? "translateY(-1px)" : undefined }}
+                  aria-label={`${i + half} stars`}
+                  onMouseEnter={() => setHover(i + half)}
+                  onClick={() => set(i + half)}
+                  className={cx("absolute inset-y-0 w-1/2", half === 0.5 ? "left-0" : "right-0")}
                 />
-              );
-            })}
-          </div>
-        ))}
+              ))}
+            </span>
+          );
+        })}
       </div>
       <div className="flex min-w-[92px] items-baseline gap-1.5">
         <span className={cx("display tabular-nums", size === "lg" ? "text-[30px]" : "text-[22px]", shown ? "text-ember" : "text-dim")}>{shown ? shown.toFixed(1) : "–"}</span>

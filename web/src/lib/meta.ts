@@ -91,3 +91,5 @@ export function lsSet(k: string, v: unknown) {
     localStorage.setItem(`savepoint:${k}`, JSON.stringify(v));
   } catch {}
 }
+
+export const SOURCE_LABEL: Record<string, string> = { steam: "Steam", appstore: "App Store", igdb: "IGDB", agent: "Researched by an agent", manual: "You" };

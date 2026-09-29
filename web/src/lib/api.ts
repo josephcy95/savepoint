@@ -16,6 +16,7 @@ export type Meta = {
   base_url: string;
   mcp_url: string;
   skill_url: string;
+  lookup_sources: string[];
   context_tokens: { mcp: number; skill_idle: number; skill_loaded: number };
   token_configured: boolean;
 };
@@ -35,7 +36,8 @@ export type Stats = {
   liked_tags: { name: string; count: number }[];
   disliked_tags: { name: string; count: number }[];
 };
-export type IgdbHit = { igdb_id: number; title: string; release_year: number | null; platforms: string[]; cover_url: string | null; summary: string | null; fields: Record<string, unknown> };
+export type LookupHit = { ref: string; source: "steam" | "appstore" | "igdb"; title: string; release_year: number | null; platforms: string[]; developer: string | null; cover_url: string | null; summary: string | null };
+export type LookupResult = { hits: LookupHit[]; failed: string[] };
 export type ToolDoc = { name: string; title: string; description: string; available: boolean; requires_igdb: boolean; annotations: Record<string, boolean>; input_schema: any };
 
 export class ApiError extends Error {

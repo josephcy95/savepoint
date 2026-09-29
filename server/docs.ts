@@ -102,7 +102,7 @@ export function openapi(baseUrl: string) {
       },
       "/api/games/{ref}/enrich": {
         parameters: [gameRef],
-        post: { summary: "Fill metadata from IGDB (requires IGDB)", requestBody: json({ type: "object", properties: { igdb_id: { type: "integer" }, overwrite: { type: "boolean" } }, required: ["igdb_id"] }), responses: ok("Game") },
+        post: { summary: "Fill empty metadata + cover from a lookup ref (steam:ID, appstore:ID, igdb:ID). overwrite=true replaces existing", requestBody: json({ type: "object", properties: { ref: { type: "string" }, overwrite: { type: "boolean" } }, required: ["ref"] }), responses: ok("Game") },
       },
       "/api/settings": {
         get: { summary: "Player settings (where they play)", responses: ok("Settings") },
@@ -119,7 +119,8 @@ export function openapi(baseUrl: string) {
       },
       "/api/stats": { get: { summary: "Aggregate stats", responses: ok("Stats") } },
       "/api/activity": { get: { summary: "Activity log", parameters: [{ name: "limit", in: "query", schema: { type: "integer" } }, { name: "game_id", in: "query", schema: { type: "integer" } }], responses: ok("Activity[]") } },
-      "/api/igdb/search": { get: { summary: "Search IGDB (requires IGDB)", parameters: [{ name: "q", in: "query", required: true, schema: { type: "string" } }], responses: ok("IgdbHit[]") } },
+      "/api/lookup": { get: { summary: "Search Steam and the App Store (plus IGDB if configured) for metadata. No key needed", parameters: [{ name: "q", in: "query", required: true, schema: { type: "string" } }, { name: "limit", in: "query", schema: { type: "integer" } }], responses: ok("{ hits: LookupHit[], failed: string[] }") } },
+      "/api/lookup/{ref}": { get: { summary: "Full detail for one lookup ref, with the fields it fills", parameters: [{ name: "ref", in: "path", required: true, schema: { type: "string" } }], responses: ok("LookupHit") } },
       "/api/export": { get: { summary: "Full JSON backup", responses: ok("Export") } },
       "/api/import": {
         post: { summary: "Import a backup. ?mode=merge (default, skips duplicates) or ?mode=replace (wipes first)", requestBody: json({ type: "object" }), responses: ok("{ created, skipped }") },
@@ -154,6 +155,7 @@ ${tools.map((t) => `- \`${t.name}\`: ${t.description}`).join("\n")}
 
 - GET /api/profile — taste profile (markdown; ?format=json)
 - GET /api/games?q=&status=&tag=&year=&available_on=mobile&availability=pc_mobile&sort= — list/search
+- GET /api/lookup?q= — search Steam / App Store for metadata; POST /api/games with { lookup: "steam:ID" } fills it
 - POST /api/games — add (GameCreate)
 - PATCH /api/games/{id|title} — update (null clears; add_tags / remove_tags)
 - POST /api/games/check — { titles: [...] } → already played / dropped / rejected?

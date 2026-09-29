@@ -3,9 +3,9 @@ import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, CornerDownLeft, Search, Plus, Library, ChartGantt, Sparkles, ChartColumn, Bot, Globe } from "lucide-react";
 import { similarity } from "../../../server/util.ts";
-import { api, type Game, type IgdbHit, type Status } from "../lib/api.ts";
-import { useLibrary, useMeta, useMutate } from "../lib/queries.ts";
-import { NOW_YEAR, STATUS, cx } from "../lib/meta.ts";
+import { api, type Game, type LookupHit, type LookupResult, type Status } from "../lib/api.ts";
+import { useLibrary, useMutate } from "../lib/queries.ts";
+import { NOW_YEAR, STATUS, SOURCE_LABEL, cx } from "../lib/meta.ts";
 import { Modal, useDebounced, Toggle } from "./ui.tsx";
 import { Cover } from "./Cover.tsx";
 import { StatusPicker, StatusBadge } from "./Status.tsx";
@@ -14,7 +14,7 @@ import { RatingMeter } from "./Rating.tsx";
 type Row =
   | { kind: "game"; game: Game }
   | { kind: "nav"; label: string; href: string; icon: any }
-  | { kind: "igdb"; hit: IgdbHit }
+  | { kind: "igdb"; hit: LookupHit }
   | { kind: "manual"; title: string };
 
 const NAV = [
@@ -27,7 +27,7 @@ const NAV = [
 
 export function Spotlight({ open, onClose, initial }: { open: boolean; onClose: () => void; initial?: string }) {
   const [q, setQ] = useState("");
-  const [draft, setDraft] = useState<{ title: string; hit?: IgdbHit } | null>(null);
+  const [draft, setDraft] = useState<{ title: string; hit?: LookupHit } | null>(null);
   useEffect(() => {
     if (open) {
       setQ(initial ?? "");
@@ -41,15 +41,14 @@ export function Spotlight({ open, onClose, initial }: { open: boolean; onClose: 
   );
 }
 
-function Search_({ q, setQ, onPick, onClose }: { q: string; setQ: (s: string) => void; onPick: (d: { title: string; hit?: IgdbHit }) => void; onClose: () => void }) {
+function Search_({ q, setQ, onPick, onClose }: { q: string; setQ: (s: string) => void; onPick: (d: { title: string; hit?: LookupHit }) => void; onClose: () => void }) {
   const [, nav] = useLocation();
   const { data: games = [] } = useLibrary();
-  const { data: meta } = useMeta();
   const dq = useDebounced(q.trim(), 280);
-  const igdb = useQuery({
-    queryKey: ["igdb", dq],
-    queryFn: () => api<IgdbHit[]>(`/api/igdb/search?q=${encodeURIComponent(dq)}&limit=6`),
-    enabled: !!meta?.igdb && dq.length >= 2,
+  const lookup = useQuery({
+    queryKey: ["lookup", dq],
+    queryFn: () => api<LookupResult>(`/api/lookup?q=${encodeURIComponent(dq)}&limit=6`),
+    enabled: dq.length >= 2,
     staleTime: 5 * 60_000,
   });
   const [idx, setIdx] = useState(0);
@@ -69,11 +68,12 @@ function Search_({ q, setQ, onPick, onClose }: { q: string; setQ: (s: string) =>
     const exact = s && lib.some((g) => similarity(s, g.title) === 1);
     if (!s) out.push(...NAV.map((n) => ({ kind: "nav" as const, ...n })));
     else out.push(...NAV.filter((n) => n.label.toLowerCase().startsWith(s.toLowerCase())).map((n) => ({ kind: "nav" as const, ...n })));
-    const libIgdb = new Set(games.map((g) => g.igdb_id).filter(Boolean));
-    if (s) for (const hit of igdb.data ?? []) if (!libIgdb.has(hit.igdb_id)) out.push({ kind: "igdb", hit });
+    // Hide store hits that are already in the journal under the same name.
+    const have = new Set(games.flatMap((g) => [g.title, ...g.alt_titles].map((t) => t.toLowerCase())));
+    if (s) for (const hit of lookup.data?.hits ?? []) if (!have.has(hit.title.toLowerCase())) out.push({ kind: "igdb", hit });
     if (s && !exact) out.push({ kind: "manual", title: s });
     return out;
-  }, [q, games, igdb.data]);
+  }, [q, games, lookup.data]);
 
   useEffect(() => {
     setIdx(0);
@@ -129,7 +129,7 @@ function Search_({ q, setQ, onPick, onClose }: { q: string; setQ: (s: string) =>
           className="h-14 flex-1 bg-transparent text-[16px] outline-none placeholder:text-dim"
           aria-label="Search or log a game"
         />
-        {igdb.isFetching && <span className="h-3 w-3 animate-spin rounded-full border-2 border-seam border-t-ember" />}
+        {lookup.isFetching && <span className="h-3 w-3 animate-spin rounded-full border-2 border-seam border-t-ember" />}
         <span className="kbd max-sm:hidden">esc</span>
       </div>
       <div ref={listRef} className="max-h-[56vh] overflow-y-auto p-2">
@@ -149,9 +149,9 @@ function Search_({ q, setQ, onPick, onClose }: { q: string; setQ: (s: string) =>
             </>,
           ),
         )}
-        {igRows.length > 0 && header("From IGDB")}
+        {igRows.length > 0 && header("From the stores")}
         {igRows.map((r) => {
-          const h = (r as any).hit as IgdbHit;
+          const h = (r as any).hit as LookupHit;
           return item(
             r,
             <>
@@ -159,7 +159,7 @@ function Search_({ q, setQ, onPick, onClose }: { q: string; setQ: (s: string) =>
               <div className="min-w-0">
                 <div className="truncate text-[14px] font-medium">{h.title}</div>
                 <div className="truncate font-mono text-[11px] text-dim">
-                  {[h.release_year, h.platforms.slice(0, 4).join(" · ")].filter(Boolean).join("  ·  ")}
+                  {[SOURCE_LABEL[h.source], h.developer, h.release_year].filter(Boolean).join("  ·  ")}
                 </div>
               </div>
               <span className="chip ml-2 h-6 shrink-0 text-[11px]">
@@ -179,7 +179,7 @@ function Search_({ q, setQ, onPick, onClose }: { q: string; setQ: (s: string) =>
                 <div className="truncate text-[14px]">
                   Log <b className="text-bone">“{(r as any).title}”</b>
                 </div>
-                <div className="text-[12px] text-dim">{meta?.igdb ? "Enter it yourself" : "Add it now. An agent can fill in the details later."}</div>
+                <div className="text-[12px] text-dim">Not in the stores? Add it yourself. An agent can fill in the details later.</div>
               </div>
             </>,
           ),
@@ -199,17 +199,17 @@ function Search_({ q, setQ, onPick, onClose }: { q: string; setQ: (s: string) =>
           );
         })}
         {!rows.length && <div className="px-3 py-8 text-center text-[13px] text-dim">Type a title to search or log it.</div>}
-        {!meta?.igdb && q.trim().length > 1 && (
+        {lookup.data?.failed.length ? (
           <div className="mx-3 mb-1 mt-3 flex items-center gap-2 text-[11.5px] text-dim">
-            <Globe size={12} /> IGDB lookup is off. Set IGDB_CLIENT_ID and IGDB_CLIENT_SECRET to search it here.
+            <Globe size={12} /> Couldn't reach {lookup.data.failed.map((f) => SOURCE_LABEL[f]).join(" or ")} just now.
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );
 }
 
-function QuickLog({ draft, onBack, onDone }: { draft: { title: string; hit?: IgdbHit }; onBack: () => void; onDone: () => void }) {
+function QuickLog({ draft, onBack, onDone }: { draft: { title: string; hit?: LookupHit }; onBack: () => void; onDone: () => void }) {
   const [, nav] = useLocation();
   const { data: games = [] } = useLibrary();
   const [title, setTitle] = useState(draft.title);
@@ -249,7 +249,8 @@ function QuickLog({ draft, onBack, onDone }: { draft: { title: string; hit?: Igd
   const submit = () => {
     const y = (s: string) => (/^\d{4}$/.test(s.trim()) ? Number(s.trim()) : undefined);
     const f = y(from), t = y(to);
-    const body: Record<string, any> = { ...(draft.hit?.fields ?? {}), title: title.trim() };
+    // The server fetches full details and the cover for the store hit.
+    const body: Record<string, any> = { title: title.trim(), ...(draft.hit ? { lookup: draft.hit.ref } : {}) };
     if (status) body.status = status;
     if (rating) body.rating = rating;
     if (showWhen && (f || t || ongoing)) body.periods = [{ start_year: f ?? t, end_year: ongoing ? undefined : (t ?? f), ongoing, platform: platform || undefined }];
@@ -274,7 +275,7 @@ function QuickLog({ draft, onBack, onDone }: { draft: { title: string; hit?: Igd
           <ArrowLeft size={15} />
         </button>
         <span className="eyebrow">Log a game</span>
-        {draft.hit && <span className="chip ml-auto h-6 text-[11px]">IGDB #{draft.hit.igdb_id}</span>}
+        {draft.hit && <span className="chip ml-auto h-6 text-[11px]">From {SOURCE_LABEL[draft.hit.source]}</span>}
       </div>
       <div className="flex gap-5 p-5 max-sm:flex-col">
         <div className="w-[150px] shrink-0 max-sm:w-[110px]">
@@ -282,7 +283,7 @@ function QuickLog({ draft, onBack, onDone }: { draft: { title: string; hit?: Igd
           {draft.hit && (
             <div className="mt-3 space-y-1 font-mono text-[11px] text-dim">
               {draft.hit.release_year && <div>{draft.hit.release_year}</div>}
-              {(draft.hit.fields.developer as string) && <div className="truncate">{draft.hit.fields.developer as string}</div>}
+              {draft.hit.developer && <div className="truncate">{draft.hit.developer}</div>}
             </div>
           )}
         </div>

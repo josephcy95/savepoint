@@ -5,7 +5,7 @@ import type { Store, Game, Actor } from "./store.ts";
 import { GameCreate, GamePatch, PeriodInput, ListQuery, Status, SORTS, gameFieldShape, Family, Availability, Settings } from "./schemas.ts";
 import { AppError, compact } from "./util.ts";
 import { igdbEnabled } from "./config.ts";
-import { fillFrom, getIgdb, searchIgdb } from "./igdb.ts";
+import { searchGames, withLookup, enrichGame } from "./lookup.ts";
 import { saveCover, saveCoverFromUrl } from "./covers.ts";
 
 export const INSTRUCTIONS = `Savepoint is the player's game journal: everything they've played, dropped, rejected or want to play, with ratings, likes/dislikes and when they played. Use it to remember their taste and recommend games.
@@ -15,7 +15,7 @@ export const INSTRUCTIONS = `Savepoint is the player's game journal: everything 
 - Capture the why: liked, disliked, a one-line review, and tags with sentiment ("+story", "-grind", neutral "roguelike"). Reuse existing tag names (list_tags).
 - Games are referenced by id or fuzzy title (alt titles too). Ambiguous → you get candidates; retry with the id. add_game refuses exact duplicates and returns the existing id.
 - Game platforms = everywhere it's released (TFT → PC, Mac, iOS, Android); a period's platform = where they played. Save where they play with update_player_settings.
-- Not in IGDB (mobile, China-only, indie)? Research it yourself: description, genres, developer, release_year, alt_titles, cover (set_cover with a direct image URL), metadata_source "agent".
+- Metadata and covers: lookup_game (Steam, App Store) then add_game with lookup, or fill_from_lookup for an existing game. Not in any store (China-only, delisted)? Research it yourself and set metadata_source "agent"; set_cover takes a direct image URL.
 - Ask before deleting unless they asked for it.`;
 
 
@@ -67,9 +67,14 @@ export interface ToolDef {
 
 const patchShape = (GamePatch as unknown as z.ZodObject<any>).shape;
 
-async function withIgdb(input: Record<string, any>, autofill: boolean) {
-  if (!autofill || !input.igdb_id || !igdbEnabled()) return input;
-  return fillFrom(input, await getIgdb(input.igdb_id));
+/** Old clients pass igdb_id alone; treat it as an IGDB lookup when IGDB is on. */
+async function autofill(input: Record<string, any>, enabled = true) {
+  if (!enabled) {
+    const { lookup, ...rest } = input;
+    return rest;
+  }
+  if (!input.lookup && input.igdb_id && igdbEnabled()) input = { ...input, lookup: `igdb:${input.igdb_id}` };
+  return withLookup(input);
 }
 
 export const TOOLS: ToolDef[] = [
@@ -136,18 +141,18 @@ export const TOOLS: ToolDef[] = [
     name: "add_game",
     title: "Add game",
     description:
-      "Log a game. Only title is required; add whatever you know. With igdb_id (and IGDB configured) missing metadata is auto-filled. Refuses exact duplicates and returns the existing id.",
+      "Log a game. Only title is required; add whatever you know. Pass lookup (a ref from lookup_game) to fill metadata and cover automatically. Refuses exact duplicates and returns the existing id.",
     shape: {
       ...(GameCreate as z.ZodObject<any>).shape,
       allow_duplicate: z.boolean().optional().describe("Only for a different game with the same name"),
-      autofill: z.boolean().optional(),
+      autofill: z.boolean().optional().describe("Set false to ignore lookup"),
     },
     run: async (s, a) => {
-      const { allow_duplicate, autofill, ...input } = a;
-      const { game, similar } = s.create(await withIgdb(input, autofill !== false), ACTOR, { allowDuplicate: allow_duplicate });
+      const { allow_duplicate, autofill: fill, ...input } = a;
+      const { game, similar } = s.create(await autofill(input, fill !== false), ACTOR, { allowDuplicate: allow_duplicate });
       const hints: string[] = [];
       if (similar.length) hints.push(`Similar titles already in library: ${similar.map((x) => `${x.title} (#${x.id})`).join(", ")}. Make sure this isn't a duplicate.`);
-      if (!game.cover_url) hints.push("No cover image. If you can find a direct image URL, set cover_url with update_game.");
+      if (!game.cover_url) hints.push("No cover image. Try lookup_game + fill_from_lookup, or set_cover with a direct image URL.");
       return { game: forAgent(game), ...(hints.length ? { hints } : {}) };
     },
   },
@@ -214,7 +219,7 @@ export const TOOLS: ToolDef[] = [
     bare: ["games"],
     run: async (s, a) => {
       const items = [];
-      for (const g of a.games) items.push(await withIgdb(g, true).catch(() => g));
+      for (const g of a.games) items.push(await autofill(g).catch(() => autofill(g, false)));
       return s.bulkCreate(items, ACTOR);
     },
   },
@@ -312,35 +317,26 @@ export const TOOLS: ToolDef[] = [
     run: (s) => s.stats(),
   },
   {
-    name: "igdb_search",
-    title: "Search IGDB",
-    description: "Search IGDB (Twitch's game database) for metadata. Returns igdb_id, title, year, platforms, cover and summary. Pass the igdb_id to add_game to auto-fill metadata.",
-    shape: { query: z.string().min(1), limit: z.number().int().min(1).max(25).optional() },
+    name: "lookup_game",
+    title: "Look up game metadata",
+    description:
+      "Search Steam, the App Store (and IGDB if configured) for a game's metadata and cover art. Returns refs like \"steam:1145360\". Pass one to add_game (lookup) or fill_from_lookup. Games in no store (China-only, delisted): research them yourself.",
+    shape: { query: z.string().min(1), limit: z.number().int().min(1).max(20).optional() },
     annotations: { readOnlyHint: true, openWorldHint: true },
-    requiresIgdb: true,
-    run: async (_s, a) => (await searchIgdb(a.query, a.limit ?? 8)).map((h) => compact({ igdb_id: h.igdb_id, title: h.title, release_year: h.release_year, platforms: h.platforms, cover_url: h.cover_url, summary: h.summary?.slice(0, 240) })),
+    run: async (_s, a) => {
+      const { hits, failed } = await searchGames(a.query, { limit: a.limit ?? 6 });
+      return { results: hits.map((h) => compact({ ref: h.ref, title: h.title, year: h.release_year, platforms: h.platforms, developer: h.developer, summary: h.summary?.slice(0, 160) })), ...(failed.length ? { unavailable: failed } : {}) };
+    },
   },
   {
-    name: "enrich_from_igdb",
-    title: "Enrich from IGDB",
-    description: "Fill a library game's missing metadata (cover, genres, developer, release date, description, links) from an IGDB entry. overwrite=true replaces existing metadata too. Never touches ratings, status, notes or tags.",
-    shape: { game: GameRef, igdb_id: z.number().int().positive(), overwrite: z.boolean().optional() },
+    name: "fill_from_lookup",
+    title: "Fill from lookup",
+    description: "Fill a library game's missing metadata and cover from a lookup_game ref. overwrite=true replaces existing metadata. Never touches status, rating, notes or tags.",
+    shape: { game: GameRef, ref: z.string().describe('e.g. "steam:1145360"'), overwrite: z.boolean().optional() },
     annotations: { openWorldHint: true },
-    requiresIgdb: true,
-    run: async (s, a) => forAgent(await enrich(s, a.game, a.igdb_id, a.overwrite, ACTOR)),
+    run: async (s, a) => forAgent(await enrichGame(s, a.game, a.ref, a.overwrite, ACTOR)),
   },
 ];
-
-const META_KEYS = Object.keys(gameFieldShape).filter((k) => !["title", "status", "rating", "favorite", "review", "liked", "disliked", "notes"].includes(k));
-
-export async function enrich(s: Store, ref: number | string, igdbId: number, overwrite: boolean | undefined, actor: Actor) {
-  const g = s.resolve(ref);
-  const hit = await getIgdb(igdbId);
-  const base = Object.fromEntries(META_KEYS.map((k) => [k, (g as any)[k]]));
-  const merged = fillFrom(base, hit, !!overwrite);
-  const changes = Object.fromEntries(Object.entries(merged).filter(([k, v]) => META_KEYS.includes(k) && JSON.stringify(v) !== JSON.stringify((g as any)[k])));
-  return s.update(g.id, changes, actor);
-}
 
 function asText(v: unknown) {
   if (v && typeof v === "object" && "__text" in (v as any)) return (v as any).__text as string;
