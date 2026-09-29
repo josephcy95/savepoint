@@ -1,0 +1,17 @@
+services:
+  savepoint:
+    build: .
+    image: savepoint:latest
+    container_name: savepoint
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    volumes:
+      - ./data:/data
+    environment:
+      # All optional. Leave empty for an open app on a trusted network.
+      API_TOKEN: ""          # agents send: Authorization: Bearer <token>
+      UI_PASSWORD: ""        # password screen for the web app
+      PUBLIC_URL: ""         # e.g. https://games.example.com (used in docs/snippets)
+      IGDB_CLIENT_ID: ""     # free Twitch dev app → enables IGDB search + autofill
+      IGDB_CLIENT_SECRET: ""

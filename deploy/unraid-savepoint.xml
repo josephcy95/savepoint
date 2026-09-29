@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>savepoint</Name>
+  <Repository>savepoint:latest</Repository>
+  <Network>bridge</Network>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Overview>Savepoint: a personal game journal for AI agents. MCP server + REST API + web UI, one SQLite file.</Overview>
+  <Category>Tools: Productivity:</Category>
+  <WebUI>http://[IP]:[PORT:8787]/</WebUI>
+  <Icon>https://raw.githubusercontent.com/lucide-icons/lucide/main/icons/gamepad-2.svg</Icon>
+  <Config Name="Web / MCP port" Target="8787" Default="8787" Mode="tcp" Type="Port" Display="always" Required="true">8787</Config>
+  <Config Name="Data" Target="/data" Default="/mnt/user/appdata/savepoint" Mode="rw" Type="Path" Display="always" Required="true">/mnt/user/appdata/savepoint</Config>
+  <Config Name="API token (agents)" Target="API_TOKEN" Default="" Mode="" Type="Variable" Display="always" Required="false" Mask="true"/>
+  <Config Name="Web UI password" Target="UI_PASSWORD" Default="" Mode="" Type="Variable" Display="always" Required="false" Mask="true"/>
+  <Config Name="Public URL" Target="PUBLIC_URL" Default="" Mode="" Type="Variable" Display="always" Required="false"/>
+  <Config Name="IGDB client id" Target="IGDB_CLIENT_ID" Default="" Mode="" Type="Variable" Display="advanced" Required="false"/>
+  <Config Name="IGDB client secret" Target="IGDB_CLIENT_SECRET" Default="" Mode="" Type="Variable" Display="advanced" Required="false" Mask="true"/>
+</Container>
