@@ -40,7 +40,7 @@ mcp_servers:
 
 const WHERE: Record<Client, string> = {
   "Claude Code": "Run in your terminal. Add --scope user to use it in every project.",
-  Hermes: "Merge into ~/.hermes/config.yaml. To trim context further, add tools: include: [get_gaming_profile, check_games, add_game, update_game, log_play_period].",
+  Hermes: "Merge into ~/.hermes/config.yaml. To trim context further, add tools: include: [get_gaming_profile, check_games, add_game, update_game, log_play_period, edit_notes].",
   "Claude Desktop": "Settings → Developer → Edit config, merge into claude_desktop_config.json, restart. Uses the mcp-remote bridge (needs Node).",
   Cursor: "~/.cursor/mcp.json (or .cursor/mcp.json in a project).",
   "VS Code": ".vscode/mcp.json in your workspace, or via “MCP: Add Server”.",

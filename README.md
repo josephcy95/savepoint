@@ -115,7 +115,7 @@ mcp_servers:
       Authorization: "Bearer ${SAVEPOINT_TOKEN}"
     lazy: true
     tools:
-      include: [get_gaming_profile, check_games, search_games, get_game, add_game, update_game, log_play_period]
+      include: [get_gaming_profile, check_games, search_games, get_game, add_game, update_game, log_play_period, edit_notes]
 ```
 
 Agents with neither can read `/llms.txt`, `/api/openapi.json`, or just `GET /api/profile`.
