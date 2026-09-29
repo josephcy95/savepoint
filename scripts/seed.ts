@@ -52,9 +52,14 @@ const games: any[] = [
   { title: "Hollow Knight: Silksong", status: "want_to_play", platforms: ["PC"], notes: "Maybe, if the map is friendlier this time.", tags: ["metroidvania"] },
   { title: "Slay the Spire 2", status: "want_to_play", notes: "Loved the idea of the first one, never tried it.", tags: ["roguelike", "deckbuilder"] },
   { title: "Rocket League", status: "on_hold", rating: 3.5, platforms: ["PC"], tags: ["+short sessions", "-toxic", "competitive"], periods: [{ start_year: 2016, end_year: 2017, hours: 300 }, { start_year: 2021, end_year: 2021, hours: 40 }] },
-  { title: "Pokémon Go", status: "dropped", rating: 3, platforms: ["iOS"], tags: ["+outdoors", "-grind"], periods: [{ start_year: 2016, start_month: 7, end_year: 2016, end_month: 10, hours: 60 }] },
+  { title: "Teamfight Tactics", status: "playing", rating: 4, platforms: ["PC", "Mac", "iOS", "Android"], genres: ["Auto battler", "Strategy"], developer: "Riot Games", release_year: 2019,
+    review: "Perfect phone game for a quick match.", liked: "Short-ish matches, new set every few months, plays the same on phone and PC.", disliked: "Ranked tilt.",
+    tags: ["+short sessions", "+strategy", "-toxic", "competitive", "auto battler"],
+    periods: [{ start_year: 2020, end_year: 2021, platform: "PC", hours: 150 }, { start_year: 2024, ongoing: true, platform: "iOS", play_style: "a game or two on the commute" }] },
+  { title: "Pokémon Go", status: "dropped", rating: 3, platforms: ["iOS", "Android"], tags: ["+outdoors", "-grind"], periods: [{ start_year: 2016, start_month: 7, end_year: 2016, end_month: 10, hours: 60 }] },
 ];
 
 for (const g of games) store.create(g, "agent");
+store.updateSettings({ play_platforms: ["pc", "mobile"], platform_note: "Phone for short sessions; PC for everything longer. No console right now." }, "you");
 store.log("you", "note", "seeded demo data");
 console.log(`Seeded ${games.length} games into ${dir}`);

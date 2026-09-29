@@ -6,6 +6,7 @@ import { Cover } from "./Cover.tsx";
 import { Stars } from "./Rating.tsx";
 import { Dot } from "./Status.tsx";
 import { TagChip } from "./Tags.tsx";
+import { PlatformIcons } from "./Platforms.tsx";
 
 export function GameCard({ g, i = 0 }: { g: Game; i?: number }) {
   const s = statusOf(g.status);
@@ -52,7 +53,7 @@ export function GameCard({ g, i = 0 }: { g: Game; i?: number }) {
 export function GameRow({ g }: { g: Game }) {
   const s = statusOf(g.status);
   return (
-    <Link href={`/game/${g.id}`} className="group grid grid-cols-[40px_minmax(0,2.2fr)_130px_90px_minmax(0,1.2fr)_70px_minmax(0,2fr)] items-center gap-4 border-b border-ridge/50 px-2 py-2 transition-colors hover:bg-plate/40 max-lg:grid-cols-[40px_minmax(0,1fr)_110px_80px]">
+    <Link href={`/game/${g.id}`} className="group grid grid-cols-[40px_minmax(0,2.2fr)_130px_90px_minmax(0,1.2fr)_120px_70px_minmax(0,1.6fr)] items-center gap-4 border-b border-ridge/50 px-2 py-2 transition-colors hover:bg-plate/40 max-lg:grid-cols-[40px_minmax(0,1fr)_110px_80px]">
       <Cover title={g.title} url={g.cover_url} className="w-10" rounded="rounded-md" dim={g.status === "not_interested" ? "gray" : undefined} />
       <div className="min-w-0">
         <div className="flex items-center gap-1.5 truncate text-[14px] font-medium">
@@ -66,6 +67,7 @@ export function GameRow({ g }: { g: Game }) {
       </span>
       <Stars value={g.rating} size={11} />
       <span className="truncate font-mono text-[11.5px] text-ash max-lg:hidden">{g.played_years}</span>
+      <PlatformIcons families={g.platform_families} played={g.played_on} labels={false} className="max-lg:hidden" />
       <span className="text-right font-mono text-[11.5px] text-dim max-lg:hidden">{hours(g.total_hours)}</span>
       <div className="flex gap-1 overflow-hidden max-lg:hidden">
         {g.tags.filter((t) => t.sentiment !== "neutral").slice(0, 3).map((t) => (

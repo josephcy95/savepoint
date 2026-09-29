@@ -1,8 +1,11 @@
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import { Check, Merge, Pencil, Trash2, X } from "lucide-react";
-import { api, type Game, type Tag } from "../lib/api.ts";
-import { useLibrary, useTags, useMutate } from "../lib/queries.ts";
+import { api, type Game, type Tag, type Family, type Availability } from "../lib/api.ts";
+import { useLibrary, useTags, useMutate, useSettings } from "../lib/queries.ts";
+import { FAMILIES, FAMILY_LABEL, AVAILABILITY, AVAILABILITY_LABEL } from "../../../server/util.ts";
+import { FAMILY_ICON } from "../components/Platforms.tsx";
+import { Editable } from "../components/Editable.tsx";
 import { cx } from "../lib/meta.ts";
 import { Cover } from "../components/Cover.tsx";
 import { Section } from "../components/ui.tsx";
@@ -42,6 +45,8 @@ export function TastePage() {
         <div className="eyebrow">What your history says about you</div>
         <h1 className="display mt-2 text-[76px] max-md:text-[52px]">Taste</h1>
       </header>
+
+      <WherePlay games={games} />
 
       {!liked.length && !disliked.length ? (
         <div className="panel mt-10 p-8 text-[14px] text-ash">
@@ -92,6 +97,68 @@ export function TastePage() {
 
       <Vocabulary tags={tags} />
     </div>
+  );
+}
+
+function WherePlay({ games }: { games: Game[] }) {
+  const { data: set } = useSettings();
+  const save = useMutate((patch: object) => api("/api/settings", { method: "PATCH", json: patch }), { success: "Saved where you play" });
+  const chosen = set?.play_platforms ?? [];
+  const inferred = set?.play_platforms_inferred ?? [];
+  const toggle = (f: Family) => save.mutate({ play_platforms: chosen.includes(f) ? chosen.filter((x) => x !== f) : [...chosen, f] });
+  const counts = useMemo(() => {
+    const m = Object.fromEntries(AVAILABILITY.map((a) => [a, 0])) as Record<Availability, number>;
+    for (const g of games) if (g.availability) m[g.availability]++;
+    return m;
+  }, [games]);
+  const unknown = games.filter((g) => !g.availability).length;
+  return (
+    <section className="panel anim-rise mt-10 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-8 p-6 max-lg:grid-cols-1">
+      <div>
+        <h2 className="display text-[34px]">Where you play</h2>
+        <p className="mt-2 text-[13.5px] text-ash">Agents only recommend games that run on these, unless you ask for something else.</p>
+        <div className="mt-5 flex flex-wrap gap-2">
+          {FAMILIES.map((f) => {
+            const Icon = FAMILY_ICON[f];
+            const on = chosen.includes(f);
+            const guess = !chosen.length && inferred.includes(f);
+            return (
+              <button
+                key={f}
+                type="button"
+                aria-pressed={on}
+                onClick={() => toggle(f)}
+                className={cx("inline-flex h-10 items-center gap-2 rounded-xl border px-4 text-[13.5px] font-medium transition-colors", on ? "border-ember bg-ember/15 text-ember" : guess ? "border-dashed border-seam text-bone" : "border-ridge text-dim hover:border-seam hover:text-ash")}
+              >
+                <Icon size={15} /> {FAMILY_LABEL[f]}
+              </button>
+            );
+          })}
+        </div>
+        {!chosen.length && inferred.length > 0 && (
+          <p className="mt-3 text-[12px] text-dim">Not set yet. Dashed ones are what your history suggests: {inferred.map((f) => FAMILY_LABEL[f]).join(", ")}.</p>
+        )}
+        <div className="mt-5 rounded-xl border border-ridge bg-void/40 p-3.5">
+          <div className="eyebrow mb-1.5">Anything agents should know</div>
+          <Editable value={set?.platform_note ?? null} onSave={(v) => save.mutate({ platform_note: v })} multiline={false} maxLength={1000} placeholder="e.g. Phone only for short sessions. PS5 is for couch co-op." className="text-[13.5px] text-ash" />
+        </div>
+      </div>
+      <div>
+        <div className="eyebrow mb-3">Your library by platform</div>
+        <ul className="space-y-2">
+          {AVAILABILITY.filter((a) => counts[a]).map((a) => (
+            <li key={a} className="flex items-center gap-3 text-[13px]">
+              <span className="w-40 shrink-0">{AVAILABILITY_LABEL[a]}</span>
+              <div className="h-1.5 flex-1 rounded-full bg-ridge/50">
+                <div className="anim-grow h-full rounded-full bg-iris/80" style={{ width: `${(counts[a] / Math.max(1, games.length)) * 100}%` }} />
+              </div>
+              <span className="w-8 text-right font-mono text-[11.5px] text-dim">{counts[a]}</span>
+            </li>
+          ))}
+        </ul>
+        {unknown > 0 && <p className="mt-3 text-[12px] text-dim">{unknown} game{unknown === 1 ? " has" : "s have"} no platforms yet. An agent can fill them in: “add release platforms to every game that's missing them”.</p>}
+      </div>
+    </section>
   );
 }
 

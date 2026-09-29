@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearch, useLocation } from "wouter";
 import { Search, LayoutGrid, List, Plus, Bot, X, Rows3 } from "lucide-react";
-import { similarity } from "../../../server/util.ts";
-import type { Game, Status } from "../lib/api.ts";
+import { similarity, FAMILY_LABEL, FAMILIES } from "../../../server/util.ts";
+import type { Game, Status, Family } from "../lib/api.ts";
 import { useLibrary, useStats } from "../lib/queries.ts";
 import { STATUS, STATUSES, cx, lsGet, lsSet, NOW_YEAR } from "../lib/meta.ts";
 import { Skyline } from "../components/Lifeline.tsx";
@@ -35,7 +35,11 @@ export function LibraryPage() {
   const [status, setStatus] = useState<Status | "all">(() => lsGet("lib.status", "all"));
   const [sort, setSort] = useState<Sort>(() => lsGet("lib.sort", "updated"));
   const [view, setView] = useState<"grid" | "dense" | "list">(() => lsGet("lib.view", "grid"));
+  const [plat, setPlat] = useState<Family | "all">(() => lsGet("lib.plat", "all"));
   const [q, setQ] = useState("");
+  useEffect(() => {
+    lsSet("lib.plat", plat);
+  }, [plat]);
   useEffect(() => {
     lsSet("lib.status", status);
   }, [status]);
@@ -56,6 +60,7 @@ export function LibraryPage() {
     let list = games ?? [];
     if (status !== "all") list = list.filter((g) => g.status === status);
     if (tagParam) list = list.filter((g) => g.tags.some((t) => t.name === tagParam));
+    if (plat !== "all") list = list.filter((g) => g.platform_families.includes(plat));
     const s = q.trim();
     if (s) {
       const scored = list
@@ -78,7 +83,7 @@ export function LibraryPage() {
       first_played: (a, b) => firstKey(a) - firstKey(b),
     };
     return [...list].sort(cmp[sort]);
-  }, [games, status, sort, q, tagParam]);
+  }, [games, status, sort, q, tagParam, plat]);
 
   const playing = useMemo(() => (games ?? []).filter((g) => g.status === "playing"), [games]);
 
@@ -170,6 +175,14 @@ export function LibraryPage() {
                 <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-dim" />
                 <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter" className="field h-9 w-[200px] pl-8 max-md:w-full" aria-label="Filter games" />
               </div>
+              <select value={plat} onChange={(e) => setPlat(e.target.value as Family | "all")} className="field h-9 w-auto py-0 pr-8 text-[13px]" aria-label="Platform">
+                <option value="all">Any platform</option>
+                {FAMILIES.map((f) => (
+                  <option key={f} value={f}>
+                    On {FAMILY_LABEL[f]}
+                  </option>
+                ))}
+              </select>
               <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} className="field h-9 w-auto py-0 pr-8 text-[13px]" aria-label="Sort">
                 {Object.entries(SORTS).map(([k, v]) => (
                   <option key={k} value={k}>
@@ -199,7 +212,7 @@ export function LibraryPage() {
 
         {shown.length === 0 ? (
           <div className="py-20 text-center">
-            <p className="text-ash">{q ? `Nothing in your journal matches “${q}”.` : "No games here yet."}</p>
+            <p className="text-ash">{q ? `Nothing in your journal matches “${q}”.` : plat !== "all" ? `Nothing here is on ${FAMILY_LABEL[plat]}. Games need their platforms filled in to show up.` : "No games here yet."}</p>
             {q && (
               <button type="button" onClick={() => openSpotlight(q)} className="btn btn-primary mt-4">
                 <Plus size={14} /> Log “{q}”

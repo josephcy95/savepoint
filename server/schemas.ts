@@ -1,4 +1,16 @@
 import { z } from "zod";
+import { FAMILIES, AVAILABILITY } from "./util.ts";
+
+export const Family = z.enum(FAMILIES).describe("pc | mobile | playstation | xbox | nintendo");
+export const Availability = z
+  .enum(AVAILABILITY)
+  .describe("pc_only | mobile_only | console_only | pc_mobile | pc_console | mobile_console | everywhere");
+
+export const Settings = z.object({
+  play_platforms: z.array(Family).optional().describe("Platform families the player actually plays on. Recommendations should be available on at least one."),
+  platform_note: z.string().max(1000).nullish().describe('Free-text nuance, e.g. "PS5 is mostly for couch co-op; phone only for short sessions"'),
+});
+export type Settings = z.infer<typeof Settings>;
 
 export const STATUSES = ["playing", "finished", "on_hold", "dropped", "not_interested", "want_to_play"] as const;
 export const SENTIMENTS = ["like", "dislike", "neutral"] as const;
@@ -45,7 +57,7 @@ export const PeriodInput = z.object({
   end_year: Year.nullish().describe("Year this stretch ended. Omit/null with ongoing=true if still playing"),
   end_month: Month.nullish(),
   ongoing: z.boolean().optional().describe("Still in this stretch right now"),
-  platform: z.string().max(60).nullish(),
+  platform: z.string().max(60).nullish().describe("Where they actually played this stretch"),
   hours: z.number().min(0).max(100000).nullish().describe("Rough hours in this stretch; estimates are fine"),
   play_style: z.string().max(120).nullish().describe('How they played: "solo", "co-op with friends", "modded server", "casual", "hardcore raiding"...'),
   note: z.string().max(4000).nullish(),
@@ -65,7 +77,11 @@ export const gameFieldShape = {
   liked: Str(8000).nullish().describe("What they liked, free text"),
   disliked: Str(8000).nullish().describe("What they disliked / why they dropped or rejected it"),
   notes: Str(20000).nullish().describe("Anything else: context, who they played with, memories"),
-  platforms: z.array(Str(60)).max(30).optional().describe('e.g. ["PC", "PS5", "Switch", "iOS", "Android"]'),
+  platforms: z
+    .array(Str(60))
+    .max(30)
+    .optional()
+    .describe('Every platform the game is RELEASED on (not just where they played it), e.g. ["PC", "Mac", "iOS", "Android"] for Teamfight Tactics. Drives the PC-only / mobile-only / multi-platform grouping.'),
   genres: z.array(Str(60)).max(30).optional(),
   developer: Str(200).nullish(),
   publisher: Str(200).nullish(),
@@ -106,6 +122,8 @@ export const ListQuery = z.object({
   year: z.coerce.number().int().optional().describe("Played during this year"),
   min_rating: z.coerce.number().optional(),
   favorite: z.coerce.boolean().optional(),
+  available_on: z.union([Family, z.array(Family)]).optional().describe("Released on ANY of these platform families"),
+  availability: z.union([Availability, z.array(Availability)]).optional(),
   sort: z.enum(SORTS).optional(),
   limit: z.coerce.number().int().min(1).max(1000).optional(),
   offset: z.coerce.number().int().min(0).optional(),

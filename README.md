@@ -38,14 +38,16 @@ claude mcp add --transport http savepoint http://<host>:8787/mcp --header "Autho
 
 The **Agents** page in the app has copy-paste configs for Claude Desktop, Cursor, VS Code and Codex, plus the full tool reference. Agents without MCP can read `/llms.txt`, `/api/openapi.json`, or just `GET /api/profile`.
 
-**Tools:** `get_gaming_profile`, `check_games`, `search_games`, `get_game`, `add_game`, `bulk_add_games`, `update_game`, `delete_game`, `log_play_period`, `update_play_period`, `delete_play_period`, `set_cover_from_url`, `list_tags`, `manage_tag`, `get_stats`, `get_recent_activity`, and with IGDB configured `igdb_search`, `enrich_from_igdb`.
+**Tools:** `get_gaming_profile`, `check_games`, `search_games`, `get_game`, `add_game`, `bulk_add_games`, `update_game`, `delete_game`, `log_play_period`, `update_play_period`, `delete_play_period`, `set_cover` (image URL or base64), `get_player_settings`, `update_player_settings`, `list_tags`, `manage_tag`, `get_stats`, `get_recent_activity`, and with IGDB configured `igdb_search`, `enrich_from_igdb`.
 **Prompts:** `recommend_games`, `backfill_history`, `review_game`. **Resources:** `savepoint://profile`, `savepoint://guide`.
 
 The server ships instructions that tell agents how to behave: read the profile before recommending, run candidates through `check_games`, never recommend `not_interested` games, log approximate dates freely, and research metadata themselves for games IGDB doesn't have.
 
 ## Data model
 
-- **Game:** title (only required field), alt titles (e.g. the original Chinese name), status, 0.5–5★ rating, favourite, verdict, liked, disliked, notes, plus metadata (platforms, genres, developer, release, description, cover, links, IGDB id, metadata source).
+- **Game:** title (only required field), alt titles (e.g. the original Chinese name), status, 0.5–5★ rating, favourite, verdict, liked, disliked, notes, plus metadata (release platforms, genres, developer, release, description, cover, links, IGDB id, metadata source).
+- **Platform grouping (automatic):** from a game's release platforms Savepoint derives its families (PC, mobile, PlayStation, Xbox, Nintendo) and a bucket: PC only, mobile only, console only, PC + mobile, PC + console, mobile + console, or everywhere. Where you actually played comes from the chapters. You set which platforms you play on (Taste page, or an agent via `update_player_settings`) and recommendations stick to those.
+- **Covers:** upload your own on any game (hover the cover → Change cover), paste a link, or have an agent send a link or an image with `set_cover`. Without one you get a generated title card.
 - **Status:** `playing` · `finished` · `on_hold` · `dropped` · `not_interested` · `want_to_play`.
 - **Chapters (play periods):** any number per game. Year / optional month start and end or ongoing, platform, rough hours, how you played, note, per-chapter rating.
 - **Tags** with sentiment per game: `+story` (liked), `-grind` (disliked), `roguelike` (neutral). Shared vocabulary you can rename and merge.

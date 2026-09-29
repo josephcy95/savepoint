@@ -1,11 +1,11 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Store, Game, Actor } from "./store.ts";
-import { GameCreate, GamePatch, PeriodInput, ListQuery, Status, SORTS, gameFieldShape, TagInput } from "./schemas.ts";
+import { GameCreate, GamePatch, PeriodInput, ListQuery, Status, SORTS, gameFieldShape, Family, Availability, Settings } from "./schemas.ts";
 import { AppError, compact } from "./util.ts";
 import { igdbEnabled } from "./config.ts";
 import { fillFrom, getIgdb, searchIgdb } from "./igdb.ts";
-import { saveCoverFromUrl } from "./covers.ts";
+import { saveCover, saveCoverFromUrl } from "./covers.ts";
 
 export const INSTRUCTIONS = `Savepoint is the player's personal game journal: every game they've played, dropped, rejected or want to play, with ratings, likes/dislikes and when they played it. Use it to remember their taste and to recommend games.
 
@@ -16,6 +16,8 @@ How to use it well:
 - Ratings are 0.5–5 stars in half steps. Only set one if the player gave an opinion you can map to stars; otherwise leave it empty.
 - Capture the WHY. Put free-text reasons in liked / disliked, a one-line verdict in review, and reusable tags with sentiment: "+story", "+co-op", "-grind", "-gacha", "-pvp", or neutral descriptors like "open-world", "roguelike", "mmo". Reuse existing tag names (list_tags) instead of inventing synonyms.
 - Games can be referenced by id or by title (fuzzy, also matches alt titles such as the original Chinese/Japanese name). If a title is ambiguous you'll get candidates back — retry with the id.
+- Platforms: a game's \`platforms\` = everywhere it's RELEASED (fill all of them, e.g. Teamfight Tactics → PC, Mac, iOS, Android); a play period's \`platform\` = where the player actually played. Savepoint derives each game's availability (pc_only, mobile_only, console_only, pc_mobile, pc_console, mobile_console, everywhere). The profile says which platforms the player plays on; only recommend games available there unless they ask otherwise, and use search_games(available_on / availability) to slice their history. If they tell you where they play, save it with update_player_settings.
+- Covers: set cover_url to a direct image link, or call set_cover with an image_url (downloaded and stored locally) or base64 image data (e.g. an image the player shared with you).
 - Many games (mobile, China-only, indie) aren't in IGDB. That's fine: research them yourself and fill description, genres, developer, release_year, alt_titles and a direct cover_url image link, with metadata_source "agent".
 - add_game refuses exact duplicates and tells you the existing id; update that game instead.
 - Ask before delete_game unless the player explicitly asked you to delete it.`;
@@ -46,6 +48,8 @@ function summary(g: Game) {
     favorite: g.favorite,
     played: g.played_years,
     hours: g.total_hours,
+    availability: g.availability,
+    played_on: g.played_on,
     platforms: g.platforms,
     genres: g.genres.slice(0, 4),
     tags: g.tags.map((t) => (t.sentiment === "like" ? "+" : t.sentiment === "dislike" ? "-" : "") + t.name),
@@ -83,7 +87,7 @@ export const TOOLS: ToolDef[] = [
     annotations: { readOnlyHint: true },
     run: (s, a) =>
       a.format === "json"
-        ? { stats: s.stats(), games: s.all().map(summary) }
+        ? { settings: s.settings(), stats: s.stats(), games: s.all().map(summary) }
         : { __text: s.profile(a.detail ?? "normal") },
   },
   {
@@ -95,7 +99,9 @@ export const TOOLS: ToolDef[] = [
       query: z.string().optional().describe("Free text: title, alt title, developer, genre or tag"),
       status: z.array(Status).optional(),
       tag: z.array(z.string()).optional().describe("Must have ALL these tags"),
-      platform: z.string().optional(),
+      platform: z.string().optional().describe('Exact platform name, e.g. "Switch"'),
+      available_on: z.array(Family).optional().describe("Released on any of these families, e.g. [\"mobile\"]"),
+      availability: z.array(Availability).optional().describe("e.g. [\"pc_mobile\", \"everywhere\"] for cross-platform games"),
       played_in_year: z.number().int().optional(),
       min_rating: z.number().optional(),
       favorite: z.boolean().optional(),
@@ -213,16 +219,45 @@ export const TOOLS: ToolDef[] = [
     },
   },
   {
-    name: "set_cover_from_url",
-    title: "Save cover image",
+    name: "set_cover",
+    title: "Set cover image",
     description:
-      "Download an image from a URL and store it as the game's cover inside Savepoint (so it never breaks like a hotlink can). Use a direct image link (jpg/png/webp), ideally portrait box art ~600x800 or larger.",
-    shape: { game: GameRef, image_url: z.string().url() },
+      "Store a cover image for a game inside Savepoint (it never breaks like a hotlink can). Pass image_url (a direct jpg/png/webp link; it's downloaded) OR image_base64 + mime_type (e.g. an image the player shared in chat). Portrait box art ~600x900 works best. Works for any game, including ones you created by hand.",
+    shape: {
+      game: GameRef,
+      image_url: z.string().url().optional(),
+      image_base64: z.string().max(12_000_000).optional().describe("Raw base64 or a data: URL"),
+      mime_type: z.enum(["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"]).optional().describe("Required with image_base64 unless it's a data: URL"),
+    },
     annotations: { openWorldHint: true },
     run: async (s, a, ctx) => {
-      const g = await saveCoverFromUrl(s, ctx.dataDir, a.game, a.image_url, ACTOR);
+      let g: Game;
+      if (a.image_url) g = await saveCoverFromUrl(s, ctx.dataDir, a.game, a.image_url, ACTOR);
+      else if (a.image_base64) {
+        const m = /^data:([^;]+);base64,(.*)$/s.exec(a.image_base64);
+        const mime = m?.[1] ?? a.mime_type;
+        if (!mime) throw new AppError(400, "mime_type is required with raw base64");
+        g = saveCover(s, ctx.dataDir, a.game, new Uint8Array(Buffer.from(m?.[2] ?? a.image_base64, "base64")), mime, ACTOR);
+      } else throw new AppError(400, "Pass image_url or image_base64");
       return { id: g.id, title: g.title, cover_url: g.cover_url };
     },
+  },
+  {
+    name: "get_player_settings",
+    title: "Get player settings",
+    description: "Which platform families the player plays on (set by them, plus what's inferred from history) and any platform note.",
+    shape: {},
+    annotations: { readOnlyHint: true },
+    run: (s) => s.settings(),
+  },
+  {
+    name: "update_player_settings",
+    title: "Update player settings",
+    description:
+      'Save where the player plays, e.g. {"play_platforms": ["pc", "mobile"], "platform_note": "phone for short sessions only"}. Recommendations should respect this.',
+    shape: Settings.shape,
+    annotations: { idempotentHint: true },
+    run: (s, a) => s.updateSettings(a, ACTOR),
   },
   {
     name: "list_tags",
@@ -357,16 +392,17 @@ export function buildMcp(store: Store, dataDir: string): McpServer {
       argsSchema: {
         mood: z.string().optional().describe('e.g. "something chill", "co-op with 3 friends", "short story game"'),
         count: z.string().optional().describe("How many (default 5)"),
+        platform: z.string().optional().describe('e.g. "mobile", "PC", "Switch", "PC or mobile"'),
       },
     },
-    ({ mood, count }) => ({
+    ({ mood, count, platform }) => ({
       messages: [
         {
           role: "user",
           content: {
             type: "text",
-            text: `Recommend ${count || 5} games I'd probably enjoy${mood ? `, specifically: ${mood}` : ""}.
-1. Call get_gaming_profile and study what I rated highly, what I dropped or rejected, and my liked/disliked tags.
+            text: `Recommend ${count || 5} games I'd probably enjoy${mood ? `, specifically: ${mood}` : ""}${platform ? `, playable on ${platform}` : ""}.
+1. Call get_gaming_profile and study what I rated highly, what I dropped or rejected, my liked/disliked tags, and which platforms I play on. Only pick games available on my platforms unless I say otherwise.
 2. Research current candidates on the web (include recent and upcoming releases, mobile and non-Western games if they fit).
 3. Call check_games with your shortlist and remove anything already in my library.
 4. For each pick, explain which of MY games and tastes it connects to, and name the risk (something I've disliked before that it might share).
@@ -389,7 +425,7 @@ export function buildMcp(store: Store, dataDir: string): McpServer {
           role: "user",
           content: {
             type: "text",
-            text: `Help me backfill my game journal${era ? ` for ${era}` : ""}. Call get_gaming_profile first so you don't ask about games already logged. Then interview me a few games at a time: what I played, roughly when, on what, how I played (solo / friends / servers), whether I liked it and why. Keep it casual and quick. Suggest likely games from that era to jog my memory. Log everything with bulk_add_games or add_game, using approximate years, tags with +/- sentiment, and short likes/dislikes in my own words.`,
+            text: `Help me backfill my game journal${era ? ` for ${era}` : ""}. Call get_gaming_profile first so you don't ask about games already logged. Ask which platforms I play on if my profile doesn't say, and save it with update_player_settings. Then interview me a few games at a time: what I played, roughly when, on what, how I played (solo / friends / servers), whether I liked it and why. Keep it casual and quick. Suggest likely games from that era to jog my memory. Log everything with bulk_add_games or add_game, using approximate years, tags with +/- sentiment, and short likes/dislikes in my own words.`,
           },
         },
       ],

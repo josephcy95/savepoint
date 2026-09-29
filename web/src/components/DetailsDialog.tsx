@@ -122,8 +122,8 @@ export function DetailsDialog({ open, onClose, game }: { open: boolean; onClose:
             <Field label="Genres" hint="Comma-separated">
               <input value={f.genres} onChange={(e) => set("genres", e.target.value)} placeholder="RPG, Survival" className="field" />
             </Field>
-            <Field label="Platforms" hint="Comma-separated">
-              <input value={f.platforms} onChange={(e) => set("platforms", e.target.value)} placeholder="PC, PS5" className="field" />
+            <Field label="Released on" hint="Every platform it's out on, not just yours">
+              <input value={f.platforms} onChange={(e) => set("platforms", e.target.value)} placeholder="PC, Mac, iOS, Android" className="field" />
             </Field>
             <Field label="Description" className="col-span-2 max-sm:col-span-1">
               <textarea value={f.description} onChange={(e) => set("description", e.target.value)} rows={3} className="field resize-y" placeholder="What the game is. Agents fill this in for games IGDB doesn't know." />

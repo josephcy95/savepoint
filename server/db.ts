@@ -78,6 +78,12 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX activity_at ON activity(at DESC);
   `,
+  /* 2: player settings (key → JSON value) */ `
+  CREATE TABLE settings (
+    key    TEXT PRIMARY KEY,
+    value  TEXT NOT NULL
+  );
+  `,
 ];
 
 export function openDb(file: string): DB {

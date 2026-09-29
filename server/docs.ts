@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { GameCreate, GamePatch, PeriodInput, TagPatch, STATUSES } from "./schemas.ts";
+import { GameCreate, GamePatch, PeriodInput, TagPatch, Settings, STATUSES } from "./schemas.ts";
+import { FAMILIES, AVAILABILITY } from "./util.ts";
 import { INSTRUCTIONS, TOOLS } from "./mcp.ts";
 import { igdbEnabled, config } from "./config.ts";
 
@@ -30,6 +31,7 @@ export function openapi(baseUrl: string) {
         GamePatch: js(GamePatch as unknown as z.ZodType),
         PeriodInput: js(PeriodInput),
         TagPatch: js(TagPatch),
+        Settings: js(Settings),
         Status: { type: "string", enum: STATUSES },
       },
     },
@@ -55,6 +57,8 @@ export function openapi(baseUrl: string) {
             { name: "platform", in: "query", schema: { type: "string" } },
             { name: "year", in: "query", schema: { type: "integer" }, description: "Played during this year" },
             { name: "min_rating", in: "query", schema: { type: "number" } },
+            { name: "available_on", in: "query", schema: { type: "array", items: { enum: FAMILIES } }, explode: true, description: "Released on any of these families" },
+            { name: "availability", in: "query", schema: { type: "array", items: { enum: AVAILABILITY } }, explode: true },
             { name: "favorite", in: "query", schema: { type: "boolean" } },
             { name: "sort", in: "query", schema: { enum: ["updated", "added", "title", "rating", "last_played", "first_played", "hours"] } },
             { name: "limit", in: "query", schema: { type: "integer" } },
@@ -91,14 +95,18 @@ export function openapi(baseUrl: string) {
       "/api/games/{ref}/cover": {
         parameters: [gameRef],
         post: {
-          summary: "Upload cover (multipart field `file`) or JSON { url } to download and store a remote image",
-          requestBody: { content: { "multipart/form-data": { schema: { type: "object", properties: { file: { type: "string", format: "binary" } } } }, "application/json": { schema: { type: "object", properties: { url: { type: "string" } } } } } },
+          summary: "Set cover: multipart `file`, JSON { url } (downloaded and stored), or JSON { data, mime_type } with base64 / a data: URL",
+          requestBody: { content: { "multipart/form-data": { schema: { type: "object", properties: { file: { type: "string", format: "binary" } } } }, "application/json": { schema: { type: "object", properties: { url: { type: "string" }, data: { type: "string" }, mime_type: { type: "string" } } } } } },
           responses: ok("Game"),
         },
       },
       "/api/games/{ref}/enrich": {
         parameters: [gameRef],
         post: { summary: "Fill metadata from IGDB (requires IGDB)", requestBody: json({ type: "object", properties: { igdb_id: { type: "integer" }, overwrite: { type: "boolean" } }, required: ["igdb_id"] }), responses: ok("Game") },
+      },
+      "/api/settings": {
+        get: { summary: "Player settings (where they play)", responses: ok("Settings") },
+        patch: { summary: "Update player settings", requestBody: json(ref("Settings")), responses: ok("Settings") },
       },
       "/api/tags": { get: { summary: "All tags with like / dislike / neutral counts", responses: ok("Tag[]") } },
       "/api/tags/{ref}": {
@@ -144,11 +152,13 @@ ${tools.map((t) => `- \`${t.name}\`: ${t.description}`).join("\n")}
 ## Key REST endpoints
 
 - GET /api/profile — taste profile (markdown; ?format=json)
-- GET /api/games?q=&status=&tag=&year=&sort= — list/search
+- GET /api/games?q=&status=&tag=&year=&available_on=mobile&availability=pc_mobile&sort= — list/search
 - POST /api/games — add (GameCreate)
 - PATCH /api/games/{id|title} — update (null clears; add_tags / remove_tags)
 - POST /api/games/check — { titles: [...] } → already played / dropped / rejected?
 - POST /api/games/{id|title}/periods — log a play period
+- GET/PATCH /api/settings — where the player plays ({ play_platforms: ["pc","mobile"] })
+- POST /api/games/{id|title}/cover — { url } or { data, mime_type } or multipart file
 - GET /api/tags · GET /api/stats · GET /api/activity · GET /api/export
 `;
 }

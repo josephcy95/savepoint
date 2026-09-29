@@ -1,5 +1,5 @@
 import { QueryClient, useMutation, useQuery } from "@tanstack/react-query";
-import { api, type Game, type GameDetail, type Meta, type Stats, type Tag, type Activity, type ToolDoc } from "./api.ts";
+import { api, type Game, type GameDetail, type Meta, type Stats, type Tag, type Activity, type ToolDoc, type Settings } from "./api.ts";
 import { toast } from "./toast.ts";
 
 export const qc = new QueryClient({
@@ -16,6 +16,7 @@ export const useGame = (ref: string | number) =>
 export const useStats = () => useQuery({ queryKey: ["stats"], queryFn: () => api<Stats>("/api/stats") });
 export const useTags = () => useQuery({ queryKey: ["tags"], queryFn: () => api<Tag[]>("/api/tags") });
 export const useActivity = (limit = 40) => useQuery({ queryKey: ["activity", limit], queryFn: () => api<Activity[]>(`/api/activity?limit=${limit}`) });
+export const useSettings = () => useQuery({ queryKey: ["settings"], queryFn: () => api<Settings>("/api/settings") });
 export const useTools = () => useQuery({ queryKey: ["tools"], queryFn: () => api<ToolDoc[]>("/api/meta/tools"), staleTime: Infinity });
 
 /** Patch a game with optimistic cache update. */

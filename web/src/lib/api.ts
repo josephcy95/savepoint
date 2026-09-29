@@ -1,5 +1,8 @@
 import type { Game, Period, GameTag, Activity, Status } from "../../../server/store.ts";
 export type { Game, Period, GameTag, Activity, Status };
+export type { Family, Availability } from "../../../server/util.ts";
+import type { Family, Availability } from "../../../server/util.ts";
+export type Settings = { play_platforms: Family[]; platform_note: string | null; play_platforms_inferred: Family[] };
 
 export type GameDetail = Game & { activity: Activity[] };
 export type Tag = { id: number; name: string; category: string | null; description: string | null; games: number; likes: number; dislikes: number; neutral: number };
@@ -24,6 +27,8 @@ export type Stats = {
   ratings: Record<string, number>;
   years: { year: number; games: number; hours: number }[];
   platforms: { name: string; count: number }[];
+  availability: Record<Availability, number>;
+  played_on: Record<Family, number>;
   genres: { name: string; count: number; avg_rating: number | null }[];
   liked_tags: { name: string; count: number }[];
   disliked_tags: { name: string; count: number }[];

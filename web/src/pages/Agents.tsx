@@ -42,13 +42,15 @@ const WHERE: Record<Client, string> = {
 };
 
 const GROUPS: { title: string; blurb: string; names: string[] }[] = [
-  { title: "Read", blurb: "Understand the player", names: ["get_gaming_profile", "check_games", "search_games", "get_game", "list_tags", "get_stats", "get_recent_activity"] },
-  { title: "Write", blurb: "Log and journal", names: ["add_game", "bulk_add_games", "update_game", "log_play_period", "update_play_period", "delete_play_period", "delete_game"] },
-  { title: "Curate", blurb: "Metadata and tidying", names: ["set_cover_from_url", "manage_tag", "igdb_search", "enrich_from_igdb"] },
+  { title: "Read", blurb: "Understand the player", names: ["get_gaming_profile", "check_games", "search_games", "get_game", "get_player_settings", "list_tags", "get_stats", "get_recent_activity"] },
+  { title: "Write", blurb: "Log and journal", names: ["add_game", "bulk_add_games", "update_game", "log_play_period", "update_play_period", "delete_play_period", "delete_game", "update_player_settings"] },
+  { title: "Curate", blurb: "Metadata and tidying", names: ["set_cover", "manage_tag", "igdb_search", "enrich_from_igdb"] },
 ];
 
 const PHRASES = [
   "What should I play next? Something like Hades but more chill.",
+  "Recommend a mobile game I can play in 10-minute bursts.",
+  "Here's the cover for 逆水寒 [image]. Set it as the cover.",
   "I played Ark on and off from 2016 to 2018 with friends, then again last year. Log that.",
   "I dropped Genshin after two months. Too many dailies and the gacha got to me.",
   "Have I already tried Warframe? Is it worth another shot given what I like?",

@@ -87,3 +87,31 @@ test("export → import round-trip", () => {
   assert.equal(g.total_hours, 120);
   assert.equal(g.tags[0].sentiment, "like");
 });
+
+test("platform grouping, filters and settings", async () => {
+  const { store, app } = setup();
+  store.create({ title: "Teamfight Tactics", platforms: ["PC", "Mac", "iOS", "Android"], periods: [{ start_year: 2020, platform: "iOS" }] }, "agent");
+  store.create({ title: "Halo Infinite", platforms: ["PC", "Series X|S"] }, "agent");
+  store.create({ title: "Pokémon Go", platforms: ["iOS", "Android"] }, "agent");
+  const tft = store.resolve("teamfight tactics");
+  assert.equal(tft.availability, "pc_mobile");
+  assert.deepEqual(tft.played_on, ["mobile"]);
+  assert.equal(store.resolve("halo infinite").availability, "pc_console");
+  const mobile = await (await app.request("/api/games?available_on=mobile")).json();
+  assert.deepEqual(mobile.games.map((g: any) => g.title).sort(), ["Pokémon Go", "Teamfight Tactics"]);
+  const only = await (await app.request("/api/games?availability=mobile_only")).json();
+  assert.equal(only.total, 1);
+  store.updateSettings({ play_platforms: ["mobile", "pc"] }, "you");
+  assert.match(store.profile(), /Plays on: PC, Mobile/);
+  assert.match(store.profile(), /\[PC \+ mobile\]/);
+});
+
+test("cover upload from base64", async () => {
+  const { store, app } = setup();
+  store.create({ title: "Custom Game" }, "you");
+  const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==";
+  const r = await app.request("/api/games/Custom%20Game/cover", json({ data: png }));
+  const g = await r.json();
+  assert.match(g.cover_url, /^\/covers\/\d+-[a-f0-9]+\.png$/);
+  assert.equal((await app.request(g.cover_url)).status, 200);
+});

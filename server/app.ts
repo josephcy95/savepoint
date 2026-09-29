@@ -144,7 +144,7 @@ export function createApp(store: Store, dataDir = config.dataDir) {
   // ─── games ───
   app.get("/api/games", (c) => {
     const raw: Record<string, unknown> = { ...c.req.query() };
-    for (const k of ["status", "tag"]) {
+    for (const k of ["status", "tag", "available_on", "availability"]) {
       const all = c.req.queries(k);
       if (all && all.length > 1) raw[k] = all;
     }
@@ -186,9 +186,15 @@ export function createApp(store: Store, dataDir = config.dataDir) {
   app.post("/api/games/:ref/cover", async (c) => {
     const ct = c.req.header("content-type") ?? "";
     if (ct.includes("application/json")) {
-      const { url } = await body<{ url?: string }>(c);
-      if (!url) throw new AppError(400, "Expected { url }");
-      return c.json(await saveCoverFromUrl(store, dataDir, refOf(c), url, actorOf(c)));
+      const { url, data, mime_type } = await body<{ url?: string; data?: string; mime_type?: string }>(c);
+      if (url) return c.json(await saveCoverFromUrl(store, dataDir, refOf(c), url, actorOf(c)));
+      if (data) {
+        const m = /^data:([^;]+);base64,(.*)$/s.exec(data);
+        const mime = m?.[1] ?? mime_type;
+        if (!mime) throw new AppError(400, "mime_type is required with raw base64 data");
+        return c.json(saveCover(store, dataDir, refOf(c), new Uint8Array(Buffer.from(m?.[2] ?? data, "base64")), mime, actorOf(c)));
+      }
+      throw new AppError(400, "Expected { url } or { data, mime_type }");
     }
     const form = await c.req.parseBody();
     const f = form.file;
@@ -200,6 +206,10 @@ export function createApp(store: Store, dataDir = config.dataDir) {
     if (!igdb_id) throw new AppError(400, "igdb_id is required");
     return c.json(await enrich(store, refOf(c), igdb_id, overwrite, actorOf(c)));
   });
+
+  // ─── settings ───
+  app.get("/api/settings", (c) => c.json(store.settings()));
+  app.patch("/api/settings", async (c) => c.json(store.updateSettings(await body(c), actorOf(c))));
 
   // ─── tags ───
   app.get("/api/tags", (c) => c.json(store.listTags()));

@@ -88,3 +88,58 @@ export function compact<T>(v: T): T {
 }
 
 export const nowYear = () => new Date().getFullYear();
+
+// ───────────────────────────── platforms ─────────────────────────────
+
+export const FAMILIES = ["pc", "mobile", "playstation", "xbox", "nintendo"] as const;
+export type Family = (typeof FAMILIES)[number];
+export const FAMILY_LABEL: Record<Family, string> = { pc: "PC", mobile: "Mobile", playstation: "PlayStation", xbox: "Xbox", nintendo: "Nintendo" };
+const CONSOLES: Family[] = ["playstation", "xbox", "nintendo"];
+
+/** Map a free-form platform name ("PS5", "iOS", "Series X|S", "Steam Deck") to a family. */
+export function platformFamily(name: string): Family | null {
+  const s = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (!s) return null;
+  if (/(ios|iphone|ipad|android|mobile|phone|tablet|taptap|harmony)/.test(s)) return "mobile";
+  if (/(ps\d|^ps$|playstation|psp|vita|psvr)/.test(s)) return "playstation";
+  if (/(xbox|xone|xsx|xss|series[xs]|x360)/.test(s)) return "xbox";
+  if (/(switch|nintendo|wii|3ds|^nds$|^ds$|gamecube|n64|^s?nes$|gameboy|^gba?$)/.test(s)) return "nintendo";
+  if (/(^pc|windows|^win|^mac|macos|osx|linux|steam|epic|gog|desktop)/.test(s)) return "pc";
+  return null;
+}
+
+export const AVAILABILITY = ["pc_only", "mobile_only", "console_only", "pc_mobile", "pc_console", "mobile_console", "everywhere"] as const;
+export type Availability = (typeof AVAILABILITY)[number];
+export const AVAILABILITY_LABEL: Record<Availability, string> = {
+  pc_only: "PC only",
+  mobile_only: "Mobile only",
+  console_only: "Console only",
+  pc_mobile: "PC + mobile",
+  pc_console: "PC + console",
+  mobile_console: "Mobile + console",
+  everywhere: "PC, mobile & console",
+};
+
+export function familiesOf(platforms: (string | null | undefined)[]): Family[] {
+  const set = new Set<Family>();
+  for (const p of platforms) {
+    const f = p ? platformFamily(p) : null;
+    if (f) set.add(f);
+  }
+  return FAMILIES.filter((f) => set.has(f));
+}
+
+/** Where a game can be played, as one of seven buckets. */
+export function availabilityOf(families: Family[]): Availability | null {
+  const pc = families.includes("pc");
+  const mobile = families.includes("mobile");
+  const con = families.some((f) => CONSOLES.includes(f));
+  if (pc && mobile && con) return "everywhere";
+  if (pc && mobile) return "pc_mobile";
+  if (pc && con) return "pc_console";
+  if (mobile && con) return "mobile_console";
+  if (pc) return "pc_only";
+  if (mobile) return "mobile_only";
+  if (con) return "console_only";
+  return null;
+}

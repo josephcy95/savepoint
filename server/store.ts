@@ -1,12 +1,17 @@
 import type { DB } from "./db.ts";
 import { tx } from "./db.ts";
-import { AppError, key, normalize, similarity, truncate, nowYear } from "./util.ts";
+import {
+  AppError, key, normalize, similarity, truncate, nowYear,
+  familiesOf, availabilityOf, FAMILIES, FAMILY_LABEL, AVAILABILITY, AVAILABILITY_LABEL,
+  type Family, type Availability,
+} from "./util.ts";
 import {
   GameCreate,
   GamePatch,
   PeriodInput,
   STATUSES,
   STATUS_HELP,
+  Settings,
   type ListQuery,
 } from "./schemas.ts";
 import type { z } from "zod";
@@ -69,6 +74,12 @@ export interface Game {
   first_played: number | null;
   last_played: number | null;
   played_years: string | null;
+  /** Families it's released on (from platforms). */
+  platform_families: Family[];
+  /** PC only / mobile only / multi-platform bucket. */
+  availability: Availability | null;
+  /** Families they actually played it on (from chapters). */
+  played_on: Family[];
 }
 
 export interface Activity {
@@ -193,6 +204,9 @@ export class Store {
       first_played: null,
       last_played: null,
       played_years: null,
+      platform_families: [],
+      availability: null,
+      played_on: [],
     };
     const hrs = periods.filter((p) => p.hours != null);
     g.total_hours = hrs.length ? Math.round(hrs.reduce((a, p) => a + (p.hours ?? 0), 0) * 10) / 10 : null;
@@ -201,6 +215,10 @@ export class Store {
     g.first_played = starts.length ? Math.min(...starts) : null;
     g.last_played = ends.length ? Math.max(...ends) : null;
     g.played_years = yearsLabel(periods);
+    g.played_on = familiesOf(periods.map((p) => p.platform));
+    // A game is at least available wherever they've played it.
+    g.platform_families = familiesOf([...g.platforms, ...periods.map((p) => p.platform)]);
+    g.availability = availabilityOf(g.platform_families);
     return g;
   }
 
@@ -260,6 +278,14 @@ export class Store {
     if (q.year) games = games.filter((g) => playedIn(g, q.year!));
     if (q.min_rating) games = games.filter((g) => (g.rating ?? 0) >= q.min_rating!);
     if (q.favorite) games = games.filter((g) => g.favorite);
+    if (q.available_on) {
+      const fams = Array.isArray(q.available_on) ? q.available_on : [q.available_on];
+      games = games.filter((g) => g.platform_families.some((f) => fams.includes(f)));
+    }
+    if (q.availability) {
+      const av = Array.isArray(q.availability) ? q.availability : [q.availability];
+      games = games.filter((g) => g.availability && av.includes(g.availability));
+    }
 
     let scores: Map<number, number> | null = null;
     if (q.q?.trim()) {
@@ -344,6 +370,7 @@ export class Store {
         status: g.status,
         rating: g.rating,
         played_years: g.played_years,
+        availability: g.availability,
         disliked: truncate(g.disliked, 160),
         tags: g.tags.filter((x) => x.sentiment !== "neutral").map((x) => (x.sentiment === "like" ? "+" : "-") + x.name),
       });
@@ -622,6 +649,36 @@ export class Store {
       .all(...(args as any[]), opts.limit ?? 50) as unknown as Activity[];
   }
 
+  // ───────────────────────────── settings ─────────────────────────────
+
+  settings(): Settings & { play_platforms_inferred: Family[] } {
+    const rows = this.db.prepare("SELECT key, value FROM settings").all() as Row[];
+    const out: Record<string, unknown> = {};
+    for (const r of rows) out[r.key] = JSON.parse(r.value);
+    // What they've actually played on, weighted by chapters — used when they haven't said.
+    const count = new Map<Family, number>();
+    for (const g of this.load()) for (const f of g.played_on) count.set(f, (count.get(f) ?? 0) + 1);
+    const inferred = [...count.entries()].sort((a, b) => b[1] - a[1]).map(([f]) => f);
+    return { play_platforms: (out.play_platforms as Family[]) ?? [], platform_note: (out.platform_note as string) ?? null, play_platforms_inferred: inferred };
+  }
+
+  updateSettings(raw: unknown, actor: Actor) {
+    const s = Settings.parse(raw);
+    const up = this.db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value");
+    const bits: string[] = [];
+    if (s.play_platforms) {
+      const fams = FAMILIES.filter((f) => s.play_platforms!.includes(f));
+      up.run("play_platforms", JSON.stringify(fams));
+      bits.push(`plays on ${fams.map((f) => FAMILY_LABEL[f]).join(", ") || "(unset)"}`);
+    }
+    if (s.platform_note !== undefined) {
+      up.run("platform_note", JSON.stringify(s.platform_note || null));
+      bits.push("updated platform note");
+    }
+    if (bits.length) this.log(actor, "settings", bits.join(", "));
+    return this.settings();
+  }
+
   // ───────────────────────────── bulk / import / export ─────────────────────────────
 
   bulkCreate(items: unknown[], actor: Actor) {
@@ -644,7 +701,7 @@ export class Store {
       version: 1,
       exported_at: new Date().toISOString(),
       games: this.load().map((g) => {
-        const { id, created_at, updated_at, total_hours, first_played, last_played, played_years, tags, periods, ...rest } = g;
+        const { id, created_at, updated_at, total_hours, first_played, last_played, played_years, platform_families, availability, played_on, tags, periods, ...rest } = g;
         return {
           ...rest,
           tags: tags.map((t) => ({ name: t.name, sentiment: t.sentiment, ...(t.category ? { category: t.category } : {}) })),
@@ -654,6 +711,7 @@ export class Store {
         };
       }),
       tags: this.listTags().map(({ name, category, description }) => ({ name, category, description })),
+      settings: (({ play_platforms_inferred, ...rest }) => rest)(this.settings()),
     };
   }
 
@@ -665,6 +723,7 @@ export class Store {
         this.db.exec("DELETE FROM games; DELETE FROM tags;");
       }
       for (const t of payload?.tags ?? []) if (t?.name) this.tagId(clean(t.name), t.category ?? undefined);
+      if (payload?.settings) this.updateSettings(payload.settings, "system");
       let created = 0;
       const skipped: string[] = [];
       for (const g of games) {
@@ -719,6 +778,12 @@ export class Store {
     }
     const tags = this.listTags();
     const rated = games.filter((g) => g.rating);
+    const availability = Object.fromEntries(AVAILABILITY.map((a) => [a, 0])) as Record<Availability, number>;
+    const played_on = Object.fromEntries(FAMILIES.map((f) => [f, 0])) as Record<Family, number>;
+    for (const g of games) {
+      if (g.availability) availability[g.availability]++;
+      for (const f of g.played_on) played_on[f]++;
+    }
     return {
       total: games.length,
       rated: rated.length,
@@ -728,6 +793,8 @@ export class Store {
       by_status: { ...by_status, unset },
       ratings,
       years: [...years.entries()].sort((a, b) => a[0] - b[0]).map(([year, v]) => ({ year, games: v.games.size, hours: Math.round(v.hours) })),
+      availability,
+      played_on,
       platforms: [...plat.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([name, count]) => ({ name, count })),
       genres: [...genre.entries()]
         .sort((a, b) => b[1].n - a[1].n)
@@ -751,6 +818,16 @@ export class Store {
     L.push("");
     L.push("Status meanings: " + STATUSES.map((s) => `${s} = ${STATUS_HELP[s]}`).join(" "));
     L.push("Tags: +tag = something they liked about that game, -tag = something they disliked, bare tag = neutral descriptor.");
+    L.push("Per game, [PC only] / [Mobile only] / [PC + mobile] etc. is where the game is released; \"played on\" is where they actually played it.");
+    L.push("");
+    const set = this.settings();
+    L.push("## Where they play");
+    if (set.play_platforms?.length) {
+      L.push(`- Plays on: ${set.play_platforms.map((f) => FAMILY_LABEL[f]).join(", ")} (set by the player). Only recommend games available on at least one of these unless they ask otherwise.`);
+    } else if (set.play_platforms_inferred.length) {
+      L.push(`- Not set explicitly. From their history they play on: ${set.play_platforms_inferred.map((f) => FAMILY_LABEL[f]).join(", ")}. Ask if unsure, and save the answer with update_player_settings.`);
+    } else L.push("- Unknown. Ask which platforms they play on and save it with update_player_settings.");
+    if (set.platform_note) L.push(`- Note: ${set.platform_note}`);
     L.push("");
     L.push("## Taste signals");
     if (st.liked_tags.length) L.push(`- Likes: ${st.liked_tags.map((t) => `${t.name} (${t.count})`).join(", ")}`);
@@ -769,6 +846,7 @@ export class Store {
         g.favorite ? "♥" : "",
         g.played_years ? `· ${g.played_years}` : "",
         g.total_hours ? `· ~${g.total_hours}h` : "",
+        g.availability ? `· [${AVAILABILITY_LABEL[g.availability]}]` : "",
         detail !== "compact" && g.genres.length ? `· ${g.genres.slice(0, 3).join("/")}` : "",
         `[#${g.id}]`,
       ].filter(Boolean).join(" ");
@@ -782,6 +860,8 @@ export class Store {
       if (g.review) parts.push(`"${truncate(g.review, n)}"`);
       if (g.liked) parts.push(`Liked: ${truncate(g.liked, n)}`);
       if (g.disliked) parts.push(`Disliked: ${truncate(g.disliked, n)}`);
+      if (g.played_on.length && g.availability !== "pc_only" && g.availability !== "mobile_only" && g.availability !== "console_only")
+        parts.push(`played on ${g.played_on.map((f) => FAMILY_LABEL[f]).join("/")}`);
       const styles = [...new Set(g.periods.map((p) => p.play_style).filter(Boolean))];
       if (styles.length) parts.push(`Played: ${styles.join("; ")}`);
       if (detail === "full" && g.notes) parts.push(`Notes: ${g.notes}`);

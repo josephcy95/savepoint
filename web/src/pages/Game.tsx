@@ -13,6 +13,8 @@ import { MiniLifeline } from "../components/Lifeline.tsx";
 import { PeriodDialog } from "../components/PeriodDialog.tsx";
 import { DetailsDialog } from "../components/DetailsDialog.tsx";
 import { Section } from "../components/ui.tsx";
+import { PlatformIcons } from "../components/Platforms.tsx";
+import { AVAILABILITY_LABEL } from "../../../server/util.ts";
 
 export function GamePage({ id }: { id: string }) {
   const { data: g, isLoading, error } = useGame(id);
@@ -49,7 +51,7 @@ export function GamePage({ id }: { id: string }) {
   };
   const passed = g.status === "not_interested";
   const dropped = g.status === "dropped";
-  const meta = [g.developer, g.release_year, g.platforms.slice(0, 4).join(" · ")].filter(Boolean);
+  const meta = [g.developer, g.release_year].filter(Boolean);
 
   return (
     <div className="anim-fade relative">
@@ -80,6 +82,12 @@ export function GamePage({ id }: { id: string }) {
           {meta.length > 0 && <div className="eyebrow text-ash">{meta.join("  ·  ")}</div>}
           <h1 className="display mt-2 text-[72px] leading-[0.86] max-md:text-[46px]">{g.title}</h1>
           {g.alt_titles.length > 0 && <div className="mt-2 text-[14px] text-ash">{g.alt_titles.join("  ·  ")}</div>}
+          {g.availability && (
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <span className="chip h-6 border-seam text-[11.5px] text-bone">{AVAILABILITY_LABEL[g.availability]}</span>
+              <PlatformIcons families={g.platform_families} played={g.played_on} />
+            </div>
+          )}
 
           <div className="mt-7 space-y-5">
             <StatusPicker value={g.status} onChange={(v) => set("status", v)} />
@@ -222,6 +230,7 @@ export function GamePage({ id }: { id: string }) {
                 </div>
               )}
               <dl className="grid grid-cols-[92px_1fr] gap-y-1.5 text-[12.5px]">
+                {g.platforms.length > 0 && (<><dt className="text-dim">Released on</dt><dd>{g.platforms.join(", ")}</dd></>)}
                 {g.developer && (<><dt className="text-dim">Developer</dt><dd>{g.developer}</dd></>)}
                 {g.publisher && g.publisher !== g.developer && (<><dt className="text-dim">Publisher</dt><dd>{g.publisher}</dd></>)}
                 {(g.release_date || g.release_year) && (<><dt className="text-dim">Released</dt><dd className="font-mono">{g.release_date ?? g.release_year}</dd></>)}
