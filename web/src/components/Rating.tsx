@@ -29,6 +29,17 @@ export function Stars({ value, size = 12, className }: { value: number | null | 
   );
 }
 
+/** Compact rating for dense lists: one star and the number. */
+export function Score({ value, className }: { value: number | null | undefined; className?: string }) {
+  if (!value) return null;
+  return (
+    <span className={cx("inline-flex items-center gap-1 font-mono text-[11.5px] tabular-nums text-ember", className)} aria-label={`${value} out of 5 stars`}>
+      <Star size={10} fill="currentColor" strokeWidth={0} />
+      {value.toFixed(1)}
+    </span>
+  );
+}
+
 /** Five stars you can set in half steps: the left half of a star is .5, the right half is a whole star. */
 export function RatingMeter({ value, onChange, size = "lg" }: { value: number | null; onChange: (v: number | null) => void; size?: "lg" | "md" }) {
   const [hover, setHover] = useState<number | null>(null);

@@ -3,7 +3,7 @@ import { Heart } from "lucide-react";
 import type { Game } from "../lib/api.ts";
 import { statusOf, hours, cx, periodRange, NOW_F } from "../lib/meta.ts";
 import { Cover } from "./Cover.tsx";
-import { Stars } from "./Rating.tsx";
+import { Score } from "./Rating.tsx";
 import { Dot } from "./Status.tsx";
 import { TagChip } from "./Tags.tsx";
 import { PlatformIcons } from "./Platforms.tsx";
@@ -37,13 +37,13 @@ export function GameCard({ g, i = 0 }: { g: Game; i?: number }) {
         )}
       </div>
       <div className="mt-2.5 px-0.5">
-        <div className={cx("line-clamp-2 text-[13.5px] font-semibold leading-snug", passed ? "text-ash" : "text-bone")}>{g.title}</div>
+        <div title={g.title} className={cx("truncate text-[13.5px] font-semibold leading-snug", passed ? "text-ash" : "text-bone")}>{g.title}</div>
         <div className="mt-1 flex items-center justify-between gap-2">
           <span className="flex min-w-0 items-center gap-1.5 text-[11.5px] text-dim">
             <Dot status={g.status} className="h-1.5 w-1.5" />
             <span className="truncate font-mono">{g.played_years ?? s.label}</span>
           </span>
-          <Stars value={g.rating} size={10} className="shrink-0" />
+          <Score value={g.rating} className="shrink-0" />
         </div>
       </div>
     </Link>
@@ -65,7 +65,7 @@ export function GameRow({ g }: { g: Game }) {
       <span className="flex items-center gap-1.5 text-[12.5px]" style={{ color: s.color }}>
         <Dot status={g.status} /> {s.label}
       </span>
-      <Stars value={g.rating} size={11} />
+      <Score value={g.rating} />
       <span className="truncate font-mono text-[11.5px] text-ash max-lg:hidden">{g.played_years}</span>
       <PlatformIcons families={g.platform_families} played={g.played_on} labels={false} className="max-lg:hidden" />
       <span className="text-right font-mono text-[11.5px] text-dim max-lg:hidden">{hours(g.total_hours)}</span>
@@ -97,7 +97,7 @@ export function NowCard({ g }: { g: Game }) {
           <div className="mt-auto space-y-1 text-[11.5px] text-ash">
             {months && cur?.ongoing && <div className="font-mono">{months < 12 ? `${months} mo` : `${(months / 12).toFixed(1)} yrs`} into this run</div>}
             <div className="flex items-center gap-2">
-              <Stars value={g.rating} size={10} />
+              <Score value={g.rating} />
               {g.total_hours ? <span className="font-mono text-dim">{hours(g.total_hours)}</span> : null}
               {cur?.platform && <span className="text-dim">· {cur.platform}</span>}
             </div>
