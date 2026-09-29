@@ -1,25 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearch, useLocation } from "wouter";
-import { Search, LayoutGrid, List, Plus, Bot, X, Rows3 } from "lucide-react";
+import { Plus, Bot } from "lucide-react";
 import { similarity, FAMILY_LABEL, FAMILIES } from "../../../server/util.ts";
 import type { Game, Status, Family } from "../lib/api.ts";
 import { useLibrary, useStats } from "../lib/queries.ts";
 import { STATUS, STATUSES, cx, lsGet, lsSet, NOW_YEAR } from "../lib/meta.ts";
 import { Skyline } from "../components/Lifeline.tsx";
 import { GameCard, GameRow, NowCard } from "../components/GameCard.tsx";
+import { LibraryFilters, type Sort, type View } from "../components/LibraryFilters.tsx";
 import { useApp } from "../App.tsx";
 import { Link } from "wouter";
 
-const SORTS = {
-  updated: "Last updated",
-  last_played: "Last played",
-  rating: "Rating",
-  title: "Title",
-  hours: "Hours",
-  first_played: "First played",
-  added: "Recently added",
-} as const;
-type Sort = keyof typeof SORTS;
 
 const lastKey = (g: Game) => (g.periods.length ? Math.max(...g.periods.map((p) => (p.ongoing ? 1e9 : (p.end_year ?? p.start_year ?? 0) * 12 + (p.end_month ?? p.start_month ?? 12)))) : -1);
 const firstKey = (g: Game) => (g.periods.length ? Math.min(...g.periods.map((p) => (p.start_year ?? p.end_year ?? 9999) * 12 + (p.start_month ?? 1))) : 1e9);
@@ -34,7 +25,7 @@ export function LibraryPage() {
 
   const [status, setStatus] = useState<Status | "all">(() => lsGet("lib.status", "all"));
   const [sort, setSort] = useState<Sort>(() => lsGet("lib.sort", "updated"));
-  const [view, setView] = useState<"grid" | "dense" | "list">(() => lsGet("lib.view", "grid"));
+  const [view, setView] = useState<View>(() => lsGet("lib.view", "grid"));
   const [plat, setPlat] = useState<Family | "all">(() => lsGet("lib.plat", "all"));
   const [q, setQ] = useState("");
   useEffect(() => {
@@ -85,6 +76,7 @@ export function LibraryPage() {
     return [...list].sort(cmp[sort]);
   }, [games, status, sort, q, tagParam, plat]);
 
+  const families = useMemo(() => FAMILIES.filter((f) => (games ?? []).some((g) => g.platform_families.includes(f))), [games]);
   const playing = useMemo(() => (games ?? []).filter((g) => g.status === "playing"), [games]);
 
   if (isLoading) return <div className="h-[60vh]" />;
@@ -147,83 +139,23 @@ export function LibraryPage() {
       )}
 
       <section className="mt-10">
-        <div className="top-0 z-30 -mx-8 border-b border-ridge/70 bg-void/92 px-8 backdrop-blur-md md:sticky max-lg:top-[57px] max-md:-mx-4 max-md:px-4">
-          {/* Tier 1: status tabs, underline sits on the divider */}
-          <div className="-mx-1 flex gap-0.5 overflow-x-auto border-b border-ridge/60 px-1 [scrollbar-width:none]" role="tablist" aria-label="Filter by status">
-            {(["all", ...STATUSES] as const).map((s) => {
-              const on = status === s;
-              const color = s === "all" ? "var(--color-bone)" : STATUS[s].color;
-              return (
-                <button
-                  key={s}
-                  type="button"
-                  role="tab"
-                  aria-selected={on}
-                  onClick={() => setStatus(s)}
-                  className={cx("relative -mb-px flex items-center gap-2 whitespace-nowrap px-3 pb-3 pt-3 text-[13px] transition-colors", on ? "text-bone" : "text-dim hover:text-ash")}
-                >
-                  {s !== "all" && <span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />}
-                  {s === "all" ? "All" : STATUS[s].label}
-                  <span className={cx("font-mono text-[10.5px]", on ? "text-ash" : "text-dim")}>{counts[s] ?? 0}</span>
-                  <span className={cx("absolute inset-x-2 bottom-0 h-[2px] rounded-full transition-opacity", on ? "opacity-100" : "opacity-0")} style={{ background: color }} />
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Tier 2: what you're looking at (left) · how to slice it (right) */}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5 py-2.5">
-            <div className="flex min-w-0 flex-1 items-center gap-2 text-[12.5px] text-dim">
-              <span className="whitespace-nowrap font-mono text-[11.5px]">
-                <span className="text-bone">{shown.length}</span> {shown.length === 1 ? "game" : "games"}
-              </span>
-              {tagParam && (
-                <span className="chip h-7 gap-1 pr-1 text-bone">
-                  tag: {tagParam}
-                  <button type="button" onClick={() => nav("/")} className="grid h-5 w-5 place-items-center rounded-full text-dim hover:bg-white/10 hover:text-bone" aria-label="Clear tag filter">
-                    <X size={11} />
-                  </button>
-                </span>
-              )}
-              {plat !== "all" && (
-                <span className="chip h-7 gap-1 pr-1 text-bone">
-                  on {FAMILY_LABEL[plat]}
-                  <button type="button" onClick={() => setPlat("all")} className="grid h-5 w-5 place-items-center rounded-full text-dim hover:bg-white/10 hover:text-bone" aria-label="Clear platform filter">
-                    <X size={11} />
-                  </button>
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-2 max-md:grid max-md:w-full max-md:grid-cols-[1fr_1fr_auto]">
-              <div className="relative max-md:col-span-3">
-                <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-dim" />
-                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter" className="field h-8 w-[190px] py-0 pl-8 text-[13px] max-md:w-full" aria-label="Filter games" />
-              </div>
-              <select value={plat} onChange={(e) => setPlat(e.target.value as Family | "all")} className="field h-8 w-auto py-0 pr-7 text-[13px] max-md:w-full max-md:pl-2.5 max-md:pr-6" aria-label="Platform">
-                <option value="all">All platforms</option>
-                {FAMILIES.map((f) => (
-                  <option key={f} value={f}>
-                    On {FAMILY_LABEL[f]}
-                  </option>
-                ))}
-              </select>
-              <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} className="field h-8 w-auto py-0 pr-7 text-[13px] max-md:w-full max-md:pl-2.5 max-md:pr-6" aria-label="Sort">
-                {Object.entries(SORTS).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-              <div className="flex shrink-0 rounded-[9px] border border-ridge p-0.5" role="group" aria-label="View">
-                {([["grid", LayoutGrid], ["dense", Rows3], ["list", List]] as const).map(([v, Icon]) => (
-                  <button key={v} type="button" onClick={() => setView(v)} aria-pressed={view === v} aria-label={`${v} view`} className={cx("grid h-[26px] w-8 place-items-center rounded-md", view === v ? "bg-plate text-bone" : "text-dim hover:text-ash")}>
-                    <Icon size={14} />
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
+        <LibraryFilters
+          status={status}
+          setStatus={setStatus}
+          counts={counts}
+          q={q}
+          setQ={setQ}
+          plat={plat}
+          setPlat={setPlat}
+          families={families}
+          sort={sort}
+          setSort={setSort}
+          view={view}
+          setView={setView}
+          shown={shown.length}
+          tag={tagParam}
+          clearTag={() => nav("/")}
+        />
 
         {shown.length === 0 ? (
           <div className="py-20 text-center">
@@ -241,7 +173,7 @@ export function LibraryPage() {
             ))}
           </div>
         ) : (
-          <div className={cx("mt-6 grid gap-x-5 gap-y-7", view === "grid" ? "grid-cols-[repeat(auto-fill,minmax(158px,1fr))] max-sm:grid-cols-2" : "grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-x-3.5 gap-y-5 max-sm:grid-cols-3")}>
+          <div className={cx("mt-4 grid gap-x-5 gap-y-7", view === "grid" ? "grid-cols-[repeat(auto-fill,minmax(158px,1fr))] max-sm:grid-cols-2" : "grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-x-3.5 gap-y-5 max-sm:grid-cols-3")}>
             {shown.map((g, i) => (
               <GameCard key={g.id} g={g} i={i} />
             ))}
