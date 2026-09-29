@@ -1,12 +1,12 @@
 import { useMemo, useRef, useState } from "react";
-import { ChevronDown, Download, ExternalLink, FileJson, KeyRound, Upload } from "lucide-react";
-import { api, type ToolDoc } from "../lib/api.ts";
+import { BookOpen, ChevronDown, Download, ExternalLink, FileJson, KeyRound, Plug, Upload } from "lucide-react";
+import { api, type Meta, type ToolDoc } from "../lib/api.ts";
 import { useMeta, useTools, useMutate } from "../lib/queries.ts";
-import { cx } from "../lib/meta.ts";
+import { cx, lsGet, lsSet } from "../lib/meta.ts";
 import { Code, CopyButton, Section } from "../components/ui.tsx";
 import { toast } from "../lib/toast.ts";
 
-const CLIENTS = ["Claude Code", "Claude Desktop", "Cursor", "VS Code", "Codex CLI", "curl"] as const;
+const CLIENTS = ["Claude Code", "Hermes", "Claude Desktop", "Cursor", "VS Code", "Codex CLI", "curl"] as const;
 type Client = (typeof CLIENTS)[number];
 
 function snippet(client: Client, url: string, token: string | null) {
@@ -21,6 +21,12 @@ function snippet(client: Client, url: string, token: string | null) {
         null,
         2,
       );
+    case "Hermes":
+      return `# ~/.hermes/config.yaml, then /reload-mcp
+mcp_servers:
+  savepoint:
+    url: "${url}"${token ? `\n    headers:\n      Authorization: "Bearer ${token}"` : ""}
+    lazy: true   # connect on first use`;
     case "Cursor":
       return JSON.stringify({ mcpServers: { savepoint: { url, ...(auth ? { headers: auth } : {}) } } }, null, 2);
     case "VS Code":
@@ -34,6 +40,7 @@ function snippet(client: Client, url: string, token: string | null) {
 
 const WHERE: Record<Client, string> = {
   "Claude Code": "Run in your terminal. Add --scope user to use it in every project.",
+  Hermes: "Merge into ~/.hermes/config.yaml. To trim context further, add tools: include: [get_gaming_profile, check_games, add_game, update_game, log_play_period].",
   "Claude Desktop": "Settings → Developer → Edit config, merge into claude_desktop_config.json, restart. Uses the mcp-remote bridge (needs Node).",
   Cursor: "~/.cursor/mcp.json (or .cursor/mcp.json in a project).",
   "VS Code": ".vscode/mcp.json in your workspace, or via “MCP: Add Server”.",
@@ -62,6 +69,8 @@ const PHRASES = [
 export function AgentsPage() {
   const { data: meta } = useMeta();
   const { data: tools = [] } = useTools();
+  const [mode, setModeState] = useState<"skill" | "mcp">(() => lsGet("agents.mode", "skill"));
+  const setMode = (m: "skill" | "mcp") => (setModeState(m), lsSet("agents.mode", m));
   const [client, setClient] = useState<Client>("Claude Code");
   const [token, setToken] = useState("");
   const url = meta?.mcp_url ?? `${location.origin}/mcp`;
@@ -71,48 +80,46 @@ export function AgentsPage() {
   return (
     <div>
       <header className="anim-rise max-w-3xl">
-        <div className="eyebrow">MCP server · REST API · llms.txt</div>
+        <div className="eyebrow">Skill · MCP server · REST API</div>
         <h1 className="display mt-2 text-[76px] max-md:text-[52px]">Hand it to your agents</h1>
         <p className="mt-4 text-[15.5px] leading-relaxed text-ash">
-          Savepoint is built to be driven by AI. Connect any MCP client and it can read your whole history, log games as you chat, and filter its recommendations against everything you've already played, dropped or passed on.
+          Savepoint is built to be driven by AI. Connect an agent and it can read your whole history, log games as you chat, and filter its recommendations against everything you've already played, dropped or passed on.
         </p>
       </header>
 
-      <section className="panel anim-rise mt-10 overflow-hidden" style={{ animationDelay: "60ms" }}>
-        <div className="grid grid-cols-[1fr_auto] items-center gap-4 border-b border-ridge p-5 max-md:grid-cols-1">
-          <div className="min-w-0">
-            <div className="eyebrow mb-1.5">MCP endpoint · Streamable HTTP</div>
-            <div className="truncate font-mono text-[18px] text-bone">{url}</div>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className={cx("chip h-8", meta?.token_configured ? "border-laurel/30 text-laurel" : "border-amber/30 text-amber")}>
-              <KeyRound size={12} /> {meta?.token_configured ? "Bearer token required" : "Open, no token set"}
-            </span>
-            <CopyButton text={url} label="Copy URL" className="h-8" />
-          </div>
-        </div>
-        <div className="p-5">
-          <div className="-mx-1 mb-4 flex flex-wrap gap-1">
-            {CLIENTS.map((c) => (
-              <button key={c} type="button" onClick={() => setClient(c)} aria-pressed={client === c} className={cx("rounded-lg px-3 py-1.5 text-[13px]", client === c ? "bg-plate text-bone" : "text-dim hover:text-ash")}>
-                {c}
-              </button>
-            ))}
-          </div>
-          <Code>{snippet(client, url, tok)}</Code>
-          <p className="mt-2.5 text-[12.5px] text-dim">{WHERE[client]}</p>
-          {meta?.token_configured && (
-            <div className="mt-4 flex items-center gap-2">
-              <input value={token} onChange={(e) => setToken(e.target.value)} type="password" placeholder="Paste your API_TOKEN to fill it in above (stays in this tab)" className="field max-w-md font-mono text-[12.5px]" />
-            </div>
-          )}
-          {!meta?.token_configured && (
-            <p className="mt-4 rounded-xl border border-amber/20 bg-amber/[.05] p-3 text-[12.5px] text-ash">
-              Anyone who can reach this address can read and write your journal. That's fine on a home network or Tailscale. Before exposing it through a Cloudflare tunnel, set <span className="font-mono text-bone">API_TOKEN</span> (and <span className="font-mono text-bone">UI_PASSWORD</span> for this web app).
-            </p>
-          )}
-        </div>
-      </section>
+      <div className="anim-rise mt-10 grid grid-cols-2 gap-3 max-md:grid-cols-1" role="radiogroup" aria-label="How to connect" style={{ animationDelay: "40ms" }}>
+        {(
+          [
+            ["skill", BookOpen, "Install a skill", "For a general assistant. Costs almost nothing until you talk about games, then the agent loads the guide and uses the REST API with curl. Needs an agent with a terminal.", meta ? `~${meta.context_tokens.skill_idle} tokens idle · ~${fmtK(meta.context_tokens.skill_loaded)} when used` : ""],
+            ["mcp", Plug, "Connect over MCP", "For a dedicated game agent or apps without a terminal (Claude Desktop, Cursor). Typed tools and prompts, but the tool list sits in context on every turn.", meta ? `~${fmtK(meta.context_tokens.mcp)} tokens every turn` : ""],
+          ] as const
+        ).map(([m, Icon, title, blurb, cost]) => {
+          const on = mode === m;
+          return (
+            <button
+              key={m}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              onClick={() => setMode(m)}
+              className={cx("relative overflow-hidden rounded-2xl border p-5 text-left transition-colors", on ? "border-ember/50 bg-ember/[.05]" : "border-ridge bg-hull/70 hover:border-seam")}
+            >
+              <span className={cx("absolute inset-x-0 top-0 h-[2px] bg-ember transition-opacity", on ? "opacity-100" : "opacity-0")} />
+              <span className="flex items-center gap-2.5">
+                <span className={cx("grid h-8 w-8 place-items-center rounded-lg border", on ? "border-ember/40 text-ember" : "border-ridge text-dim")}>
+                  <Icon size={15} />
+                </span>
+                <span className="display text-[24px]">{title}</span>
+                <span className={cx("ml-auto grid h-4 w-4 place-items-center rounded-full border", on ? "border-ember" : "border-seam")}>{on && <span className="h-2 w-2 rounded-full bg-ember" />}</span>
+              </span>
+              <p className="mt-3 text-[13px] leading-relaxed text-ash">{blurb}</p>
+              <p className={cx("mt-3 font-mono text-[11.5px]", on ? "text-ember" : "text-dim")}>{cost}</p>
+            </button>
+          );
+        })}
+      </div>
+
+      {mode === "skill" ? <SkillPanel meta={meta} /> : <McpPanel url={url} client={client} setClient={setClient} tok={tok} token={token} setToken={setToken} tokenConfigured={!!meta?.token_configured} />}
 
       <div className="mt-12 grid grid-cols-[minmax(0,1fr)_340px] gap-10 max-xl:grid-cols-1">
         <div className="space-y-10">
@@ -153,9 +160,10 @@ export function AgentsPage() {
               ))}
             </ul>
           </Section>
-          <Section title="For agents without MCP">
+          <Section title="Docs for agents">
             <div className="space-y-2">
               {[
+                ["/skill/SKILL.md", "The skill: how to use Savepoint over REST"],
                 ["/llms.txt", "Plain-text guide an agent can read first"],
                 ["/api/openapi.json", "OpenAPI 3.1 spec for the REST API"],
                 ["/api/profile", "The taste profile as markdown"],
@@ -174,6 +182,148 @@ export function AgentsPage() {
         </aside>
       </div>
     </div>
+  );
+}
+
+const fmtK = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1).replace(/\.0$/, "")}k` : String(n));
+
+const SKILL_AGENTS = ["Hermes", "Claude Code", "Any agent"] as const;
+type SkillAgent = (typeof SKILL_AGENTS)[number];
+
+function skillSteps(agent: SkillAgent, url: string, tokenNeeded: boolean): { say: string; cmd: string; where: string } {
+  const tok = tokenNeeded ? " My Savepoint API token is <token>; save it as SAVEPOINT_TOKEN." : "";
+  switch (agent) {
+    case "Hermes":
+      return {
+        say: `Install the Savepoint skill from ${url}.${tok}`,
+        cmd: `hermes skills install ${url}${tokenNeeded ? `\necho 'SAVEPOINT_TOKEN=<token>' >> ~/.hermes/.env` : ""}`,
+        where: "Or type /skills install in a chat. It takes effect in the next session (/reset).",
+      };
+    case "Claude Code":
+      return {
+        say: `Download ${url} into ~/.claude/skills/savepoint/SKILL.md so it's available in every project.${tok}`,
+        cmd: `mkdir -p ~/.claude/skills/savepoint && curl -so ~/.claude/skills/savepoint/SKILL.md ${url}${tokenNeeded ? `\n# and export SAVEPOINT_TOKEN=<token> in your shell profile` : ""}`,
+        where: "Claude Code picks up skills in ~/.claude/skills on the next start.",
+      };
+    case "Any agent":
+      return {
+        say: `Read ${url} and follow it whenever I talk about games: what to play, what I've played, or logging a game.${tok}`,
+        cmd: `curl -s ${url}`,
+        where: "Works with any agent that follows the agentskills.io format, or just reads a URL and has a terminal.",
+      };
+  }
+}
+
+function SkillPanel({ meta }: { meta?: Meta }) {
+  const [agent, setAgent] = useState<SkillAgent>("Hermes");
+  const url = meta?.skill_url ?? `${location.origin}/skill/SKILL.md`;
+  const steps = skillSteps(agent, url, !!meta?.token_configured);
+  return (
+    <section className="panel anim-fade mt-4 overflow-hidden">
+      <div className="grid grid-cols-[1fr_auto] items-center gap-4 border-b border-ridge p-5 max-md:grid-cols-1">
+        <div className="min-w-0">
+          <div className="eyebrow mb-1.5">Skill file · agentskills.io format</div>
+          <a href={url} target="_blank" rel="noreferrer" className="block truncate font-mono text-[18px] text-bone hover:text-ember">
+            {url}
+          </a>
+        </div>
+        <div className="flex items-center gap-2">
+          <a href={url} target="_blank" rel="noreferrer" className="btn btn-sm h-8">
+            <ExternalLink size={13} /> Preview
+          </a>
+          <CopyButton text={url} label="Copy URL" className="h-8" />
+        </div>
+      </div>
+      <div className="p-5">
+        <div className="-mx-1 mb-5 flex flex-wrap gap-1">
+          {SKILL_AGENTS.map((a) => (
+            <button key={a} type="button" onClick={() => setAgent(a)} aria-pressed={agent === a} className={cx("rounded-lg px-3 py-1.5 text-[13px]", agent === a ? "bg-plate text-bone" : "text-dim hover:text-ash")}>
+              {a}
+            </button>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-5 max-lg:grid-cols-1">
+          <div>
+            <div className="eyebrow mb-2">Tell your agent</div>
+            <div className="group relative rounded-xl border border-ember/25 bg-ember/[.04] p-4 pr-20 text-[14px] leading-relaxed text-bone">
+              “{steps.say}”
+              <CopyButton text={steps.say} className="absolute right-2 top-2" />
+            </div>
+          </div>
+          <div>
+            <div className="eyebrow mb-2">Or run it yourself</div>
+            <Code>{steps.cmd}</Code>
+          </div>
+        </div>
+        <p className="mt-3 text-[12.5px] text-dim">{steps.where}</p>
+        <ul className="mt-5 grid grid-cols-3 gap-3 border-t border-ridge pt-5 text-[12.5px] leading-relaxed text-ash max-md:grid-cols-1">
+          <li>
+            <span className="mb-1 block font-mono text-[11px] uppercase tracking-wider text-dim">Idle</span>
+            Only the skill's name and one-line description stay in context{meta ? ` (~${meta.context_tokens.skill_idle} tokens)` : ""}.
+          </li>
+          <li>
+            <span className="mb-1 block font-mono text-[11px] uppercase tracking-wider text-dim">When games come up</span>
+            The agent loads the guide{meta ? ` (~${fmtK(meta.context_tokens.skill_loaded)} tokens)` : ""}, reads your profile and calls the REST API with curl.
+          </li>
+          <li>
+            <span className="mb-1 block font-mono text-[11px] uppercase tracking-wider text-dim">Address</span>
+            The URLs inside the skill are this server's. Open this page from the address your agent will use (LAN IP, Tailscale name) or set <span className="font-mono text-bone">PUBLIC_URL</span>.
+          </li>
+        </ul>
+        {meta?.token_configured ? (
+          <p className="mt-4 rounded-xl border border-ridge bg-void/60 p-3 text-[12.5px] text-ash">
+            The skill never contains your token. The agent reads it from <span className="font-mono text-bone">SAVEPOINT_TOKEN</span>.
+          </p>
+        ) : (
+          <OpenWarning />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function McpPanel(p: { url: string; client: Client; setClient: (c: Client) => void; tok: string | null; token: string; setToken: (t: string) => void; tokenConfigured: boolean }) {
+  return (
+    <section className="panel anim-fade mt-4 overflow-hidden">
+      <div className="grid grid-cols-[1fr_auto] items-center gap-4 border-b border-ridge p-5 max-md:grid-cols-1">
+        <div className="min-w-0">
+          <div className="eyebrow mb-1.5">MCP endpoint · Streamable HTTP</div>
+          <div className="truncate font-mono text-[18px] text-bone">{p.url}</div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={cx("chip h-8", p.tokenConfigured ? "border-laurel/30 text-laurel" : "border-amber/30 text-amber")}>
+            <KeyRound size={12} /> {p.tokenConfigured ? "Bearer token required" : "Open, no token set"}
+          </span>
+          <CopyButton text={p.url} label="Copy URL" className="h-8" />
+        </div>
+      </div>
+      <div className="p-5">
+        <div className="-mx-1 mb-4 flex flex-wrap gap-1">
+          {CLIENTS.map((c) => (
+            <button key={c} type="button" onClick={() => p.setClient(c)} aria-pressed={p.client === c} className={cx("rounded-lg px-3 py-1.5 text-[13px]", p.client === c ? "bg-plate text-bone" : "text-dim hover:text-ash")}>
+              {c}
+            </button>
+          ))}
+        </div>
+        <Code>{snippet(p.client, p.url, p.tok)}</Code>
+        <p className="mt-2.5 text-[12.5px] text-dim">{WHERE[p.client]}</p>
+        {p.tokenConfigured ? (
+          <div className="mt-4 flex items-center gap-2">
+            <input value={p.token} onChange={(e) => p.setToken(e.target.value)} type="password" placeholder="Paste your API_TOKEN to fill it in above (stays in this tab)" className="field max-w-md font-mono text-[12.5px]" />
+          </div>
+        ) : (
+          <OpenWarning />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function OpenWarning() {
+  return (
+    <p className="mt-4 rounded-xl border border-amber/20 bg-amber/[.05] p-3 text-[12.5px] text-ash">
+      Anyone who can reach this address can read and write your journal. That's fine on a home network or Tailscale. Before exposing it through a Cloudflare tunnel, set <span className="font-mono text-bone">API_TOKEN</span> (and <span className="font-mono text-bone">UI_PASSWORD</span> for this web app).
+    </p>
   );
 }
 

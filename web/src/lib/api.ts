@@ -15,6 +15,8 @@ export type Meta = {
   igdb: boolean;
   base_url: string;
   mcp_url: string;
+  skill_url: string;
+  context_tokens: { mcp: number; skill_idle: number; skill_loaded: number };
   token_configured: boolean;
 };
 export type Stats = {

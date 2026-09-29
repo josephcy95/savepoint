@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type { Store, Game, Actor } from "./store.ts";
 import { GameCreate, GamePatch, PeriodInput, ListQuery, Status, SORTS, gameFieldShape, Family, Availability, Settings } from "./schemas.ts";
@@ -7,20 +8,15 @@ import { igdbEnabled } from "./config.ts";
 import { fillFrom, getIgdb, searchIgdb } from "./igdb.ts";
 import { saveCover, saveCoverFromUrl } from "./covers.ts";
 
-export const INSTRUCTIONS = `Savepoint is the player's personal game journal: every game they've played, dropped, rejected or want to play, with ratings, likes/dislikes and when they played it. Use it to remember their taste and to recommend games.
+export const INSTRUCTIONS = `Savepoint is the player's game journal: everything they've played, dropped, rejected or want to play, with ratings, likes/dislikes and when they played. Use it to remember their taste and recommend games.
 
-How to use it well:
-- Before recommending anything, call get_gaming_profile (their whole history + taste signals in one call). Then call check_games with your candidate titles and drop anything they've already played, dropped or marked not_interested.
-- Log generously while chatting. "I played Ark on and off from 2016 to 2018" → add_game (or log_play_period if it exists) with an approximate period. Precision is not required; year-level guesses are fine.
-- Statuses: playing, finished, on_hold (paused / long-running game they stepped away from), dropped (tried and quit), not_interested (looked at it and rejected it — never recommend again), want_to_play (wishlist, including unreleased).
-- Ratings are 0.5–5 stars in half steps. Only set one if the player gave an opinion you can map to stars; otherwise leave it empty.
-- Capture the WHY. Put free-text reasons in liked / disliked, a one-line verdict in review, and reusable tags with sentiment: "+story", "+co-op", "-grind", "-gacha", "-pvp", or neutral descriptors like "open-world", "roguelike", "mmo". Reuse existing tag names (list_tags) instead of inventing synonyms.
-- Games can be referenced by id or by title (fuzzy, also matches alt titles such as the original Chinese/Japanese name). If a title is ambiguous you'll get candidates back — retry with the id.
-- Platforms: a game's \`platforms\` = everywhere it's RELEASED (fill all of them, e.g. Teamfight Tactics → PC, Mac, iOS, Android); a play period's \`platform\` = where the player actually played. Savepoint derives each game's availability (pc_only, mobile_only, console_only, pc_mobile, pc_console, mobile_console, everywhere). The profile says which platforms the player plays on; only recommend games available there unless they ask otherwise, and use search_games(available_on / availability) to slice their history. If they tell you where they play, save it with update_player_settings.
-- Covers: set cover_url to a direct image link, or call set_cover with an image_url (downloaded and stored locally) or base64 image data (e.g. an image the player shared with you).
-- Many games (mobile, China-only, indie) aren't in IGDB. That's fine: research them yourself and fill description, genres, developer, release_year, alt_titles and a direct cover_url image link, with metadata_source "agent".
-- add_game refuses exact duplicates and tells you the existing id; update that game instead.
-- Ask before delete_game unless the player explicitly asked you to delete it.`;
+- Before recommending: get_gaming_profile, then check_games on your candidates and drop anything already played, dropped or not_interested (never recommend those). Only suggest games available on the platforms the profile lists.
+- Log as you chat. Approximate years are fine ("Ark on and off 2016–2018" → one period). Only set a rating (0.5–5, half steps) if they gave an opinion.
+- Capture the why: liked, disliked, a one-line review, and tags with sentiment ("+story", "-grind", neutral "roguelike"). Reuse existing tag names (list_tags).
+- Games are referenced by id or fuzzy title (alt titles too). Ambiguous → you get candidates; retry with the id. add_game refuses exact duplicates and returns the existing id.
+- Game platforms = everywhere it's released (TFT → PC, Mac, iOS, Android); a period's platform = where they played. Save where they play with update_player_settings.
+- Not in IGDB (mobile, China-only, indie)? Research it yourself: description, genres, developer, release_year, alt_titles, cover (set_cover with a direct image URL), metadata_source "agent".
+- Ask before deleting unless they asked for it.`;
 
 
 const ACTOR = "agent" as const;
@@ -64,6 +60,8 @@ export interface ToolDef {
   shape: z.ZodRawShape;
   annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean; idempotentHint?: boolean; openWorldHint?: boolean };
   requiresIgdb?: boolean;
+  /** Top-level params whose nested descriptions are dropped from the advertised schema (documented elsewhere). */
+  bare?: string[];
   run: (store: Store, args: any, ctx: { dataDir: string }) => Promise<unknown> | unknown;
 }
 
@@ -79,10 +77,10 @@ export const TOOLS: ToolDef[] = [
     name: "get_gaming_profile",
     title: "Get gaming profile",
     description:
-      "The player's complete gaming history and taste in one call: stats, liked/disliked tag signals, genre ratings, and every game grouped by status (playing, finished, on hold, dropped, not interested, want to play) with ratings, years, tags and short likes/dislikes. Call this first before recommending games.",
+      "The player's whole history and taste in one call: platforms, stats, liked/disliked tags, and every game grouped by status with rating, years, tags and short reasons. Call first before recommending.",
     shape: {
-      detail: z.enum(["compact", "normal", "full"]).optional().describe("compact = one line per game; normal (default) = with tags + short reasons; full = include complete notes"),
-      format: z.enum(["markdown", "json"]).optional().describe("markdown (default, token-efficient) or json"),
+      detail: z.enum(["compact", "normal", "full"]).optional().describe("default normal; full includes notes"),
+      format: z.enum(["markdown", "json"]).optional(),
     },
     annotations: { readOnlyHint: true },
     run: (s, a) =>
@@ -94,14 +92,14 @@ export const TOOLS: ToolDef[] = [
     name: "search_games",
     title: "Search the library",
     description:
-      "Find games in the library. Fuzzy-matches titles and alt titles, plus developer/genre/tag text. Combine with filters. Returns slim summaries; use get_game for full detail.",
+      "Search the library (fuzzy title/alt title, developer, genre, tag) with filters. Returns summaries; get_game for detail.",
     shape: {
-      query: z.string().optional().describe("Free text: title, alt title, developer, genre or tag"),
+      query: z.string().optional(),
       status: z.array(Status).optional(),
       tag: z.array(z.string()).optional().describe("Must have ALL these tags"),
       platform: z.string().optional().describe('Exact platform name, e.g. "Switch"'),
-      available_on: z.array(Family).optional().describe("Released on any of these families, e.g. [\"mobile\"]"),
-      availability: z.array(Availability).optional().describe("e.g. [\"pc_mobile\", \"everywhere\"] for cross-platform games"),
+      available_on: z.array(Family).optional().describe("Released on any of these"),
+      availability: z.array(Availability).optional(),
       played_in_year: z.number().int().optional(),
       min_rating: z.number().optional(),
       favorite: z.boolean().optional(),
@@ -117,7 +115,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "get_game",
     title: "Get game",
-    description: "Full detail for one game: all fields, tags with sentiment, every play period (with period ids), notes and recent activity.",
+    description: "Everything about one game, including play period ids and recent activity.",
     shape: { game: GameRef },
     annotations: { readOnlyHint: true },
     run: (s, a) => {
@@ -129,7 +127,7 @@ export const TOOLS: ToolDef[] = [
     name: "check_games",
     title: "Check titles against history",
     description:
-      "Given candidate titles (e.g. games you're about to recommend), report for each whether it's already in the library and what the player thought: finished, dropped, rejected (not_interested), wishlisted, etc. Also flags similar titles (same series). Use this to filter recommendations.",
+      "For candidate titles, say whether each is already in the library and how it went (finished, dropped, not_interested...), plus similar titles from the same series. Use to filter recommendations.",
     shape: { titles: z.array(z.string().min(1)).min(1).max(100) },
     annotations: { readOnlyHint: true },
     run: (s, a) => s.check(a.titles),
@@ -138,11 +136,11 @@ export const TOOLS: ToolDef[] = [
     name: "add_game",
     title: "Add game",
     description:
-      "Log a game. Only title is required; add whatever you know: status, rating, likes/dislikes, tags (+liked / -disliked / neutral), play periods (approximate years are fine) or the year_played shortcut, and metadata. If igdb_id is given and IGDB is configured, missing metadata (cover, genres, developer, release date...) is auto-filled. Refuses exact duplicates and returns the existing id.",
+      "Log a game. Only title is required; add whatever you know. With igdb_id (and IGDB configured) missing metadata is auto-filled. Refuses exact duplicates and returns the existing id.",
     shape: {
       ...(GameCreate as z.ZodObject<any>).shape,
-      allow_duplicate: z.boolean().optional().describe("Only if it's genuinely a different game with the same name"),
-      autofill: z.boolean().optional().describe("Auto-fill metadata from IGDB when igdb_id is given (default true)"),
+      allow_duplicate: z.boolean().optional().describe("Only for a different game with the same name"),
+      autofill: z.boolean().optional(),
     },
     run: async (s, a) => {
       const { allow_duplicate, autofill, ...input } = a;
@@ -157,18 +155,19 @@ export const TOOLS: ToolDef[] = [
     name: "update_game",
     title: "Update game",
     description:
-      "Change any fields on a game. Only fields you pass are touched; pass null to clear a field. Tags: use add_tags / remove_tags for incremental edits, or tags to replace all. Use this for status changes (\"I dropped it\"), ratings, likes/dislikes, notes and metadata enrichment.",
+      "Change fields on a game: status (\"I dropped it\"), rating, likes/dislikes, notes, metadata. Only passed fields change.",
     shape: {
       game: GameRef,
-      changes: (z.object(patchShape) as z.ZodObject<any>).describe("Fields to change (same fields as add_game, plus add_tags / remove_tags)"),
+      changes: (z.object(patchShape) as z.ZodObject<any>).describe("Any add_game field (null clears it), plus add_tags / remove_tags. tags replaces all tags."),
     },
+    bare: ["changes"],
     annotations: { idempotentHint: true },
     run: (s, a) => forAgent(s.update(a.game, a.changes, ACTOR)),
   },
   {
     name: "delete_game",
     title: "Delete game",
-    description: "Permanently delete a game and its play periods. Ask the player first unless they explicitly requested it.",
+    description: "Permanently delete a game and its periods.",
     shape: { game: GameRef, confirm: z.literal(true).describe("Must be true") },
     annotations: { destructiveHint: true },
     run: (s, a) => {
@@ -180,7 +179,7 @@ export const TOOLS: ToolDef[] = [
     name: "log_play_period",
     title: "Log play period",
     description:
-      "Record a stretch of time the player spent on a game (they can have many: e.g. Minecraft 2012–2014, then 2020–now). Everything is optional and approximate: years, months, platform, rough hours, how they played (solo, co-op, modded server...), a note, and a rating for that stretch.",
+      "Add a stretch of play to a game (a game can have many, e.g. Minecraft 2012–2014 then 2020–now). All fields optional and approximate.",
     shape: { game: GameRef, ...PeriodInput.shape },
     run: (s, a) => {
       const { game, ...p } = a;
@@ -210,8 +209,9 @@ export const TOOLS: ToolDef[] = [
     name: "bulk_add_games",
     title: "Bulk add games",
     description:
-      "Add many games at once (e.g. after interviewing the player about their history). Each item takes the same fields as add_game. Duplicates are skipped and reported with the existing id, not fatal.",
-    shape: { games: z.array(z.object((GameCreate as z.ZodObject<any>).shape)).min(1).max(200) },
+      "Add many games at once, e.g. after interviewing the player. Duplicates are skipped and reported.",
+    shape: { games: z.array(z.object((GameCreate as z.ZodObject<any>).shape)).min(1).max(200).describe("Items take the add_game fields") },
+    bare: ["games"],
     run: async (s, a) => {
       const items = [];
       for (const g of a.games) items.push(await withIgdb(g, true).catch(() => g));
@@ -222,7 +222,7 @@ export const TOOLS: ToolDef[] = [
     name: "set_cover",
     title: "Set cover image",
     description:
-      "Store a cover image for a game inside Savepoint (it never breaks like a hotlink can). Pass image_url (a direct jpg/png/webp link; it's downloaded) OR image_base64 + mime_type (e.g. an image the player shared in chat). Portrait box art ~600x900 works best. Works for any game, including ones you created by hand.",
+      "Store a cover image for a game: image_url (direct jpg/png/webp link, downloaded) or image_base64 + mime_type (e.g. an image the player shared). Portrait box art works best.",
     shape: {
       game: GameRef,
       image_url: z.string().url().optional(),
@@ -245,7 +245,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "get_player_settings",
     title: "Get player settings",
-    description: "Which platform families the player plays on (set by them, plus what's inferred from history) and any platform note.",
+    description: "Which platforms the player plays on (set + inferred from history).",
     shape: {},
     annotations: { readOnlyHint: true },
     run: (s) => s.settings(),
@@ -254,7 +254,7 @@ export const TOOLS: ToolDef[] = [
     name: "update_player_settings",
     title: "Update player settings",
     description:
-      'Save where the player plays, e.g. {"play_platforms": ["pc", "mobile"], "platform_note": "phone for short sessions only"}. Recommendations should respect this.',
+      "Save which platforms the player plays on.",
     shape: Settings.shape,
     annotations: { idempotentHint: true },
     run: (s, a) => s.updateSettings(a, ACTOR),
@@ -262,7 +262,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "list_tags",
     title: "List tags",
-    description: "All tags in use with how often each was liked / disliked / neutral. Check this to reuse existing tag names instead of creating synonyms.",
+    description: "Tags in use with like/dislike counts. Reuse these names instead of inventing synonyms.",
     shape: {},
     annotations: { readOnlyHint: true },
     run: (s) => s.listTags().map((t) => compact({ ...t, likes: t.likes || undefined, dislikes: t.dislikes || undefined, neutral: t.neutral || undefined })),
@@ -271,15 +271,15 @@ export const TOOLS: ToolDef[] = [
     name: "manage_tag",
     title: "Manage tag",
     description:
-      "Tidy the tag vocabulary. action=rename (tag → new_name), set_category (tag → category, e.g. genre / mechanic / theme / social / monetization / vibe), describe, merge (tags[] → into), delete.",
+      "Tidy tags: rename (tag, new_name), set_category (tag, category), describe (tag, description), merge (tags → into), delete (tag).",
     shape: {
       action: z.enum(["rename", "set_category", "describe", "merge", "delete"]),
-      tag: z.string().optional().describe("Tag name or id (rename / set_category / describe / delete)"),
+      tag: z.string().optional(),
       new_name: z.string().optional(),
       category: z.string().nullable().optional(),
       description: z.string().nullable().optional(),
-      tags: z.array(z.string()).optional().describe("merge: tags to fold in"),
-      into: z.string().optional().describe("merge: target tag name (created if missing)"),
+      tags: z.array(z.string()).optional(),
+      into: z.string().optional(),
     },
     run: (s, a) => {
       const need = (v: unknown, n: string) => {
@@ -298,7 +298,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "get_recent_activity",
     title: "Recent activity",
-    description: "What changed recently in the journal (who: you = player in the web UI, agent = MCP, api = REST).",
+    description: "Recent changes and who made them (you = player, agent, api).",
     shape: { limit: z.number().int().min(1).max(200).optional(), since: z.string().optional().describe("ISO date") },
     annotations: { readOnlyHint: true },
     run: (s, a) => s.activity({ limit: a.limit ?? 30, since: a.since }).map((x) => `${x.at.slice(0, 16).replace("T", " ")} ${x.actor}: ${x.summary}`),
@@ -306,7 +306,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "get_stats",
     title: "Stats",
-    description: "Aggregate numbers: counts by status, rating histogram, games and hours per year, top platforms, genres and tags.",
+    description: "Counts by status, ratings, games and hours per year, top platforms, genres and tags.",
     shape: {},
     annotations: { readOnlyHint: true },
     run: (s) => s.stats(),
@@ -353,23 +353,53 @@ function errText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+/**
+ * JSON Schema as advertised to agents. Every tools/list lands in the agent's context on every turn,
+ * so strip what the model doesn't need: length/count limits, null variants (null still clears a field),
+ * enum descriptions that just repeat the enum, and nested descriptions under `bare` params.
+ */
+function lean(s: any, bare = false): any {
+  if (Array.isArray(s)) return s.map((x) => lean(x, bare));
+  if (!s || typeof s !== "object") return s;
+  if (Array.isArray(s.anyOf)) {
+    const rest = s.anyOf.filter((x: any) => x.type !== "null");
+    if (rest.length === 1) return lean({ ...rest[0], ...(s.description ? { description: s.description } : {}) }, bare);
+  }
+  const out: any = {};
+  for (const [k, v] of Object.entries(s)) {
+    if (["$schema", "maxLength", "minLength", "maxItems", "minItems", "maximum", "minimum", "exclusiveMinimum", "propertyNames"].includes(k)) continue;
+    if (k === "additionalProperties" && v === false) continue;
+    if (k === "description" && (bare || (s.enum && /^\w+( \| \w+)+$/.test(v as string)))) continue;
+    out[k] = k === "properties" ? Object.fromEntries(Object.entries(v as object).map(([pk, pv]) => [pk, lean(pv, bare)])) : lean(v, bare);
+  }
+  return out;
+}
+
+export function inputSchema(t: ToolDef) {
+  const js: any = lean(z.toJSONSchema(z.object(t.shape), { unrepresentable: "any" }));
+  for (const k of t.bare ?? []) if (js.properties?.[k]) js.properties[k] = { ...lean(js.properties[k], true), ...(js.properties[k].description ? { description: js.properties[k].description } : {}) };
+  return js;
+}
+
 export function buildMcp(store: Store, dataDir: string): McpServer {
   const server = new McpServer({ name: "savepoint", title: "Savepoint game journal", version: "1.0.0" }, { instructions: INSTRUCTIONS });
 
-  for (const t of TOOLS) {
-    if (t.requiresIgdb && !igdbEnabled()) continue;
-    (server as any).registerTool(
-      t.name,
-      { title: t.title, description: t.description, inputSchema: t.shape, annotations: t.annotations },
-      async (args: any) => {
-        try {
-          return { content: [{ type: "text", text: asText(await t.run(store, args ?? {}, { dataDir })) }] };
-        } catch (e) {
-          return { isError: true, content: [{ type: "text", text: errText(e) }] };
-        }
-      },
-    );
-  }
+  // Tools are served by hand so agents get the lean schema; full zod validation still runs on every call.
+  const tools = TOOLS.filter((t) => !t.requiresIgdb || igdbEnabled());
+  server.server.registerCapabilities({ tools: {} });
+  server.server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: tools.map((t) => ({ name: t.name, title: t.title, description: t.description, inputSchema: inputSchema(t), ...(t.annotations ? { annotations: t.annotations } : {}) })),
+  }));
+  server.server.setRequestHandler(CallToolRequestSchema, async (req) => {
+    const t = tools.find((x) => x.name === req.params.name);
+    if (!t) return { isError: true, content: [{ type: "text", text: `Unknown tool ${req.params.name}` }] };
+    try {
+      const args = z.object(t.shape).parse(req.params.arguments ?? {});
+      return { content: [{ type: "text", text: asText(await t.run(store, args, { dataDir })) }] };
+    } catch (e) {
+      return { isError: true, content: [{ type: "text", text: errText(e) }] };
+    }
+  });
 
   server.registerResource(
     "profile",
@@ -453,6 +483,12 @@ export function buildMcp(store: Store, dataDir: string): McpServer {
   return server;
 }
 
+/** What an MCP client keeps in context every turn: tool list + server instructions (~4 chars/token). */
+export function mcpContextChars() {
+  const tools = TOOLS.filter((t) => !t.requiresIgdb || igdbEnabled()).map((t) => ({ name: t.name, description: t.description, inputSchema: inputSchema(t), annotations: t.annotations }));
+  return JSON.stringify(tools).length + INSTRUCTIONS.length;
+}
+
 /** Tool catalog for docs (JSON Schema per tool). */
 export function toolCatalog() {
   return TOOLS.map((t) => ({
@@ -462,6 +498,6 @@ export function toolCatalog() {
     available: !t.requiresIgdb || igdbEnabled(),
     requires_igdb: !!t.requiresIgdb,
     annotations: t.annotations ?? {},
-    input_schema: z.toJSONSchema(z.object(t.shape), { unrepresentable: "any" }),
+    input_schema: inputSchema(t),
   }));
 }

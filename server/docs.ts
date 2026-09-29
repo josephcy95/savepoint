@@ -136,6 +136,7 @@ export function llmsTxt(baseUrl: string) {
 
 ## Connect
 
+- Skill (agentskills.io, REST + curl): ${baseUrl}/skill/SKILL.md
 - MCP (Streamable HTTP): ${baseUrl}/mcp
 - REST: ${baseUrl}/api  (OpenAPI: ${baseUrl}/api/openapi.json)
 - Auth: ${config.apiToken ? "`Authorization: Bearer <API_TOKEN>`" : "none configured"}

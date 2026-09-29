@@ -7,8 +7,8 @@ export const Availability = z
   .describe("pc_only | mobile_only | console_only | pc_mobile | pc_console | mobile_console | everywhere");
 
 export const Settings = z.object({
-  play_platforms: z.array(Family).optional().describe("Platform families the player actually plays on. Recommendations should be available on at least one."),
-  platform_note: z.string().max(1000).nullish().describe('Free-text nuance, e.g. "PS5 is mostly for couch co-op; phone only for short sessions"'),
+  play_platforms: z.array(Family).optional().describe("Families the player plays on"),
+  platform_note: z.string().max(1000).nullish().describe('e.g. "phone only for short sessions"'),
 });
 export type Settings = z.infer<typeof Settings>;
 
@@ -49,56 +49,56 @@ export const TagInput = z
       category: z.string().max(40).optional(),
     }),
   ])
-  .describe('"+story" = liked aspect, "-grind" = disliked aspect, "open-world" = neutral descriptor, or {name, sentiment, category}');
+  .describe('"+story" liked, "-grind" disliked, "open-world" neutral');
 
 export const PeriodInput = z.object({
-  start_year: Year.nullish().describe("Approximate year they started this stretch"),
+  start_year: Year.nullish().describe("Approximate is fine"),
   start_month: Month.nullish(),
-  end_year: Year.nullish().describe("Year this stretch ended. Omit/null with ongoing=true if still playing"),
+  end_year: Year.nullish().describe("Omit with ongoing=true if still playing"),
   end_month: Month.nullish(),
-  ongoing: z.boolean().optional().describe("Still in this stretch right now"),
+  ongoing: z.boolean().optional(),
   platform: z.string().max(60).nullish().describe("Where they actually played this stretch"),
-  hours: z.number().min(0).max(100000).nullish().describe("Rough hours in this stretch; estimates are fine"),
-  play_style: z.string().max(120).nullish().describe('How they played: "solo", "co-op with friends", "modded server", "casual", "hardcore raiding"...'),
+  hours: z.number().min(0).max(100000).nullish().describe("Rough estimate"),
+  play_style: z.string().max(120).nullish().describe('e.g. "solo", "co-op with friends", "modded server"'),
   note: z.string().max(4000).nullish(),
-  rating: Rating.nullish().describe("How this stretch felt, if different from the overall rating"),
+  rating: Rating.nullish(),
 });
 export type PeriodInput = z.infer<typeof PeriodInput>;
 
 const Str = (max: number) => z.string().max(max);
 
 export const gameFieldShape = {
-  title: Str(300).min(1).describe("Primary title (use the most common English title if one exists)"),
-  alt_titles: z.array(Str(300)).max(20).optional().describe("Other names: original-language title (e.g. Chinese), abbreviations, regional names"),
+  title: Str(300).min(1).describe("Most common English title"),
+  alt_titles: z.array(Str(300)).max(20).optional().describe("Original-language / regional names, abbreviations"),
   status: Status.nullish(),
   rating: Rating.nullish(),
-  favorite: z.boolean().optional().describe("All-time favourite"),
-  review: Str(4000).nullish().describe("One-line verdict in the player's words"),
-  liked: Str(8000).nullish().describe("What they liked, free text"),
-  disliked: Str(8000).nullish().describe("What they disliked / why they dropped or rejected it"),
-  notes: Str(20000).nullish().describe("Anything else: context, who they played with, memories"),
+  favorite: z.boolean().optional(),
+  review: Str(4000).nullish().describe("One-line verdict"),
+  liked: Str(8000).nullish(),
+  disliked: Str(8000).nullish().describe("Incl. why they dropped or rejected it"),
+  notes: Str(20000).nullish().describe("Context, who with, memories"),
   platforms: z
     .array(Str(60))
     .max(30)
     .optional()
-    .describe('Every platform the game is RELEASED on (not just where they played it), e.g. ["PC", "Mac", "iOS", "Android"] for Teamfight Tactics. Drives the PC-only / mobile-only / multi-platform grouping.'),
+    .describe('Everywhere it is RELEASED, e.g. ["PC","iOS","Android"]'),
   genres: z.array(Str(60)).max(30).optional(),
   developer: Str(200).nullish(),
   publisher: Str(200).nullish(),
   release_year: z.number().int().min(1950).max(2100).nullish(),
-  release_date: Str(20).nullish().describe("YYYY-MM-DD if known"),
-  description: Str(8000).nullish().describe("Short objective description of the game (what it is, gameplay loop)"),
-  cover_url: Str(2000).nullish().describe("Direct image URL for cover art (portrait works best)"),
+  release_date: Str(20).nullish().describe("YYYY-MM-DD"),
+  description: Str(8000).nullish().describe("Short objective description"),
+  cover_url: Str(2000).nullish().describe("Direct image URL, portrait"),
   igdb_id: z.number().int().positive().nullish(),
-  links: z.record(z.string(), Str(2000)).optional().describe('e.g. {"steam": "...", "official": "...", "taptap": "..."}'),
-  metadata_source: z.enum(SOURCES).nullish().describe('Where metadata came from: "igdb", "agent" (researched by an AI) or "manual"'),
+  links: z.record(z.string(), Str(2000)).optional().describe('{"steam": url, "official": url, ...}'),
+  metadata_source: z.enum(SOURCES).nullish().describe('"agent" if you researched it'),
 };
 
 export const GameCreate = z.object({
   ...gameFieldShape,
   tags: z.array(TagInput).max(100).optional(),
-  periods: z.array(PeriodInput).max(100).optional().describe("Play stretches. Approximate is fine."),
-  year_played: Year.optional().describe("Shortcut: creates one play period in this year (ignored if periods is given)"),
+  periods: z.array(PeriodInput).max(100).optional(),
+  year_played: Year.optional().describe("Shortcut for one period in this year"),
 });
 export type GameCreate = z.infer<typeof GameCreate>;
 

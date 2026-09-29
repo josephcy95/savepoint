@@ -9,7 +9,7 @@ so any agent can recommend your next game without suggesting one you already hat
 </p>
 
 <p align="center">
-MCP server · REST API · web UI · one container · one SQLite file
+Agent skill · MCP server · REST API · web UI · one container · one SQLite file
 </p>
 
 ![Library](docs/library.webp)
@@ -70,14 +70,56 @@ With nothing set, anyone who can reach the port can read and write the journal. 
 
 ## Connect an agent
 
-MCP endpoint (Streamable HTTP): `http://<host>:8787/mcp`
+There are two ways in. Pick per agent.
+
+| | Skill | MCP |
+| --- | --- | --- |
+| Best for | A general assistant that mostly does other things (Hermes, Claude Code) | A dedicated game agent, or apps without a terminal (Claude Desktop, Cursor) |
+| Context cost | ~80 tokens until games come up, then ~1.1k for that conversation | ~3.8k tokens on every turn |
+| How it talks to Savepoint | `curl` against the REST API | Typed MCP tools, prompts and resources |
+| Needs | A terminal tool | An MCP client |
+
+The **Agents** page in the app shows both, with copy-paste setup for each client. Open it from the address your agent will use (LAN IP or Tailscale name), because the links it hands out use that address. Or set `PUBLIC_URL`.
+
+### Skill
+
+Savepoint serves an [agentskills.io](https://agentskills.io)-format skill at `/skill/SKILL.md`, filled in with this server's address. It covers reading the profile, checking candidates, and logging games and play sessions with curl. The file is public and never contains your token.
+
+```bash
+# Hermes
+hermes skills install http://<host>:8787/skill/SKILL.md
+# or just tell it: "Install the Savepoint skill from http://<host>:8787/skill/SKILL.md"
+
+# Claude Code
+mkdir -p ~/.claude/skills/savepoint && curl -so ~/.claude/skills/savepoint/SKILL.md http://<host>:8787/skill/SKILL.md
+```
+
+If you set `API_TOKEN`, give the agent a `SAVEPOINT_TOKEN` env var (for Hermes, add it to `~/.hermes/.env`).
+
+### MCP
+
+Streamable HTTP at `http://<host>:8787/mcp`.
 
 ```bash
 # Claude Code
 claude mcp add --transport http savepoint http://<host>:8787/mcp --header "Authorization: Bearer $TOKEN"
 ```
 
-The **Agents** page in the app has ready-to-paste configs for Claude Desktop, Cursor, VS Code and Codex, plus the full tool reference. Agents without MCP can use `/llms.txt`, `/api/openapi.json`, or just `GET /api/profile` for a markdown summary of your taste.
+```yaml
+# Hermes: ~/.hermes/config.yaml, then /reload-mcp
+mcp_servers:
+  savepoint:
+    url: "http://<host>:8787/mcp"
+    headers:
+      Authorization: "Bearer ${SAVEPOINT_TOKEN}"
+    lazy: true
+    tools:
+      include: [get_gaming_profile, check_games, search_games, get_game, add_game, update_game, log_play_period]
+```
+
+Agents with neither can read `/llms.txt`, `/api/openapi.json`, or just `GET /api/profile`.
+
+### Try it
 
 Then ask things like:
 
@@ -98,7 +140,7 @@ Then ask things like:
 
 Prompts: `recommend_games`, `backfill_history`, `review_game`. Resources: `savepoint://profile`, `savepoint://guide`.
 
-The server ships instructions that shape how agents behave. They read the profile before recommending, run every candidate through `check_games`, never suggest a `not_interested` game, log rough dates without nagging for exact ones, and research metadata themselves for games IGDB doesn't have.
+Both the skill and the MCP server tell agents how to behave. They read the profile before recommending, run every candidate through `check_games`, never suggest a `not_interested` game, log rough dates without nagging for exact ones, and research metadata themselves for games IGDB doesn't have.
 
 ## Data model
 

@@ -62,6 +62,26 @@ test("MCP endpoint lists tools and runs one", async () => {
   assert.ok(!res.result.isError, res.result.content[0].text);
   const prof = await (await rpc(4, "tools/call", { name: "get_gaming_profile", arguments: {} })).json();
   assert.match(prof.result.content[0].text, /\*\*Hades\*\* 5★/);
+  // Lean schema is advertised, but full validation still runs.
+  const bad = await (await rpc(5, "tools/call", { name: "update_game", arguments: { game: "Hades", changes: { rating: 7 } } })).json();
+  assert.ok(bad.result.isError);
+});
+
+test("skill is served publicly and never includes the token", async () => {
+  const { config } = await import("../server/config.ts");
+  const { app } = setup();
+  config.apiToken = "s3cret";
+  try {
+    const r = await app.request("/skill/SKILL.md", { headers: { Host: "games.lan:8787" } });
+    assert.equal(r.status, 200);
+    const md = await r.text();
+    assert.match(md, /^---\nname: savepoint\n/);
+    assert.match(md, /http:\/\/games\.lan:8787\/api\/profile/);
+    assert.match(md, /\$SAVEPOINT_TOKEN/);
+    assert.ok(!md.includes("s3cret"));
+  } finally {
+    config.apiToken = "";
+  }
 });
 
 test("auth: token required when configured", async () => {

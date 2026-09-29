@@ -10,10 +10,11 @@ import { Store, type Actor } from "./store.ts";
 import { config, authEnabled, igdbEnabled } from "./config.ts";
 import { AppError } from "./util.ts";
 import { ListQuery, TagPatch } from "./schemas.ts";
-import { buildMcp, enrich, toolCatalog } from "./mcp.ts";
+import { buildMcp, enrich, toolCatalog, mcpContextChars } from "./mcp.ts";
 import { fillFrom, getIgdb, searchIgdb } from "./igdb.ts";
 import { MIME, coversDir, deleteLocalCover, saveCover, saveCoverFromUrl } from "./covers.ts";
 import { openapi, llmsTxt } from "./docs.ts";
+import { skillMd, skillIdleChars } from "./skill.ts";
 
 const COOKIE = "savepoint_session";
 const VERSION = "1.0.0";
@@ -95,10 +96,17 @@ export function createApp(store: Store, dataDir = config.dataDir) {
       base_url: baseUrl(c),
       mcp_url: `${baseUrl(c)}/mcp`,
       token_configured: Boolean(config.apiToken),
+      skill_url: `${baseUrl(c)}/skill/SKILL.md`,
+      // Rough tokens an agent carries every turn for each way of connecting.
+      context_tokens: { mcp: Math.round(mcpContextChars() / 4), skill_idle: Math.round(skillIdleChars() / 4), skill_loaded: Math.round(skillMd(baseUrl(c)).length / 4) },
     }),
   );
   app.get("/api/openapi.json", (c) => c.json(openapi(baseUrl(c))));
   app.get("/llms.txt", (c) => c.text(llmsTxt(baseUrl(c))));
+  // Agent skill: public like llms.txt (it holds no data, and the token is never embedded).
+  const skill = (c: Context) => c.body(skillMd(baseUrl(c)), 200, { "Content-Type": "text/markdown; charset=utf-8", "Cache-Control": "no-cache" });
+  app.get("/skill/SKILL.md", skill);
+  app.get("/SKILL.md", skill);
 
   app.post("/api/auth/login", async (c) => {
     const { password } = await body<{ password?: string }>(c);
