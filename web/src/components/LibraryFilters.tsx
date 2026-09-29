@@ -104,7 +104,7 @@ export function LibraryFilters(p: Props) {
                 onClick={() => p.setStatus(s)}
                 onMouseEnter={() => setHover(s)}
                 onMouseLeave={() => setHover(null)}
-                className={cx("group relative px-4 pb-3.5 pt-3 text-left transition-colors max-md:min-w-[96px] max-md:shrink-0 max-md:snap-start", i > 0 && "border-l border-ridge/60", on ? "" : "hover:bg-white/[0.025]")}
+                className={cx("group relative px-4 pb-2.5 pt-2.5 text-left transition-colors max-md:min-w-[96px] max-md:shrink-0 max-md:snap-start", i > 0 && "border-l border-ridge/60", on ? "" : "hover:bg-white/[0.025]")}
                 style={on ? { background: `linear-gradient(180deg, color-mix(in oklab, ${c} 14%, transparent), transparent 85%)` } : undefined}
               >
                 <span className={cx("absolute inset-x-0 top-0 h-[2px] transition-opacity", on ? "opacity-100" : "opacity-0")} style={{ background: c, boxShadow: `0 0 14px ${c}` }} />
@@ -113,12 +113,12 @@ export function LibraryFilters(p: Props) {
                   {labelOf(s)}
                 </span>
                 <span
-                  className={cx("display mt-1.5 block text-[40px] tabular-nums transition-colors max-md:text-[34px]", n === 0 ? "outline-num" : on ? "" : "text-ash/70 group-hover:text-ash")}
+                  className={cx("display mt-1 block text-[32px] tabular-nums transition-colors max-md:text-[30px]", n === 0 ? "outline-num" : on ? "" : "text-ash/70 group-hover:text-ash")}
                   style={on && n ? { color: s === "all" ? undefined : c } : undefined}
                 >
                   {n}
                 </span>
-<span className="mt-2.5 flex items-center gap-2">
+<span className="mt-1.5 flex items-center gap-2">
                   <span className="relative h-[3px] flex-1 overflow-hidden rounded-full bg-white/[0.06]">
                     <span className={cx("absolute inset-y-0 left-0 rounded-full transition-opacity", on || hover === s ? "opacity-100" : "opacity-55")} style={{ width: `${total ? (n / total) * 100 : 0}%`, background: c }} />
                   </span>
