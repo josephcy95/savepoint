@@ -3,4 +3,11 @@ dist
 data
 demo-data
 .git
+.github
 *.db*
+*.md
+test
+scripts
+docs
+docker-compose*.yml
+deploy

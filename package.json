@@ -2,6 +2,7 @@
   "name": "savepoint",
   "version": "1.0.0",
   "private": true,
+  "license": "MIT",
   "description": "A personal game journal built for AI agents: MCP + REST API + web UI, one container, one SQLite file.",
   "type": "module",
   "engines": {

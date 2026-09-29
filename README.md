@@ -1,31 +1,72 @@
-# Savepoint
+<p align="center"><img src="web/public/icon.png" width="72" alt=""></p>
 
-A personal game journal built for AI agents. It records every game you've played, dropped, looked at and passed on, or want to play: ratings, what you liked and didn't, tags, and when you played (including on-and-off stretches across years). Agents read and write it over **MCP** or **REST**; the web UI is for browsing and quick edits.
+<h1 align="center">Savepoint</h1>
 
-One container, one process, one SQLite file.
+<p align="center">
+A self-hosted game journal that your AI agents can read and write.<br>
+Log what you played, when, how it went, what you dropped and what you passed on,<br>
+so any agent can recommend your next game without suggesting one you already hated.
+</p>
+
+<p align="center">
+MCP server · REST API · web UI · one container · one SQLite file
+</p>
+
+![Library](docs/library.webp)
+
+## Why
+
+Trakt and Simkl do this for film and TV. For games there's nothing simple you can self-host and hand to an agent. Backloggd and HowLongToBeat have no public API, and Ryot needs Postgres and tracks far more than games.
+
+Savepoint is built for one person and their agents:
+
+- **A complete history, including the bad parts.** Finished, dropped, on hold, "looked at it and passed". The games you rejected matter as much as the ones you loved, because they stop an agent recommending them again.
+- **Play that happens in stretches.** Minecraft in 2012, again in 2017, again now. Each stretch is its own chapter with dates, platform, hours and a note, and they show up on a lifeline across your years.
+- **Why you liked it.** Half-step star ratings, a one-line verdict, what worked, what didn't, and tags marked liked or disliked (`+story`, `-grind`), so agents can spot patterns.
+- **Where you play.** Every game gets a platform bucket (PC only, mobile only, PC + console, everywhere…), and you say which platforms you actually use, so recommendations stay on hardware you own.
+- **Any game, not just what's in a database.** MMOs, mobile gacha, Chinese-only releases. IGDB autofill is optional; agents can research and fill in metadata and covers themselves.
+
+Recommendations happen in your agent's chat, not in the app. Savepoint just gives the agent the full picture.
+
+## Screenshots
+
+| Game page | Timeline |
+| --- | --- |
+| ![Game](docs/game.webp) | ![Timeline](docs/timeline.webp) |
+
+| Agents page |
+| --- |
+| ![Agents](docs/agents.webp) |
 
 ## Run it
 
 ```bash
-docker build -t savepoint .
-docker run -d --name savepoint -p 8787:8787 -v /mnt/user/appdata/savepoint:/data savepoint
+docker run -d --name savepoint -p 8787:8787 \
+  -v /path/to/appdata/savepoint:/data \
+  ghcr.io/josephcy95/savepoint:latest
 ```
 
-Open `http://<host>:8787`. Or `docker compose up -d`.
+Open `http://<host>:8787`. The image is multi-arch (amd64, arm64).
 
-**Unraid:** build the image on the server (`docker build -t savepoint .` in this folder), then copy `deploy/unraid-savepoint.xml` to `/boot/config/plugins/dockerMan/templates-user/` and add the container from *Docker → Add Container → Template*.
+**Docker Compose:** grab [`docker-compose.yml`](docker-compose.yml) and run `docker compose up -d`.
 
-### Configuration (all optional)
+**Unraid:** copy [`deploy/unraid-savepoint.xml`](deploy/unraid-savepoint.xml) to `/boot/config/plugins/dockerMan/templates-user/`, then *Docker → Add Container → Template → savepoint*.
+
+Everything lives in `/data`: `savepoint.db` and an uploaded `covers/` folder. Back up that folder, or use *Agents → Backup → Export JSON*.
+
+### Configuration
+
+All optional.
 
 | Variable | What it does |
 | --- | --- |
-| `API_TOKEN` | Require `Authorization: Bearer <token>` for `/api` and `/mcp`. Set this before exposing via a Cloudflare tunnel. |
+| `API_TOKEN` | Require `Authorization: Bearer <token>` for `/api` and `/mcp`. Set this before exposing it through a Cloudflare tunnel or similar. |
 | `UI_PASSWORD` | Password screen for the web UI (90-day cookie). The API token also works as a password. |
 | `PUBLIC_URL` | External URL used in the docs and copy-paste snippets. Auto-detected otherwise. |
-| `IGDB_CLIENT_ID` / `IGDB_CLIENT_SECRET` | A free Twitch developer app. Enables IGDB search in the log dialog and metadata autofill. |
-| `PORT`, `DATA_DIR` | Default `8787`, `/data`. |
+| `IGDB_CLIENT_ID` / `IGDB_CLIENT_SECRET` | A free [Twitch developer app](https://api-docs.igdb.com/#account-creation). Enables IGDB search when logging, plus metadata and cover autofill. |
+| `PORT`, `DATA_DIR` | Default `8787` and `/data`. |
 
-With nothing set, the app is open to anyone who can reach it, which is fine on a LAN or Tailscale.
+With nothing set, anyone who can reach the port can read and write the journal. That's fine on a home network or Tailscale.
 
 ## Connect an agent
 
@@ -36,35 +77,57 @@ MCP endpoint (Streamable HTTP): `http://<host>:8787/mcp`
 claude mcp add --transport http savepoint http://<host>:8787/mcp --header "Authorization: Bearer $TOKEN"
 ```
 
-The **Agents** page in the app has copy-paste configs for Claude Desktop, Cursor, VS Code and Codex, plus the full tool reference. Agents without MCP can read `/llms.txt`, `/api/openapi.json`, or just `GET /api/profile`.
+The **Agents** page in the app has ready-to-paste configs for Claude Desktop, Cursor, VS Code and Codex, plus the full tool reference. Agents without MCP can use `/llms.txt`, `/api/openapi.json`, or just `GET /api/profile` for a markdown summary of your taste.
 
-**Tools:** `get_gaming_profile`, `check_games`, `search_games`, `get_game`, `add_game`, `bulk_add_games`, `update_game`, `delete_game`, `log_play_period`, `update_play_period`, `delete_play_period`, `set_cover` (image URL or base64), `get_player_settings`, `update_player_settings`, `list_tags`, `manage_tag`, `get_stats`, `get_recent_activity`, and with IGDB configured `igdb_search`, `enrich_from_igdb`.
-**Prompts:** `recommend_games`, `backfill_history`, `review_game`. **Resources:** `savepoint://profile`, `savepoint://guide`.
+Then ask things like:
 
-The server ships instructions that tell agents how to behave: read the profile before recommending, run candidates through `check_games`, never recommend `not_interested` games, log approximate dates freely, and research metadata themselves for games IGDB doesn't have.
+- "What should I play next? Something co-op I can play on PC or my phone."
+- "I just finished Hades, log it. 5 stars, loved the combat loop, got tired of the last biome."
+- "Interview me about games I played as a kid and backfill them."
+- "Would I like Path of Exile 2?"
+
+### Tools
+
+| Area | Tools |
+| --- | --- |
+| Read | `get_gaming_profile`, `search_games`, `get_game`, `check_games`, `get_stats`, `get_recent_activity` |
+| Write | `add_game`, `bulk_add_games`, `update_game`, `delete_game`, `set_cover` |
+| Chapters | `log_play_period`, `update_play_period`, `delete_play_period` |
+| Taste | `get_player_settings`, `update_player_settings`, `list_tags`, `manage_tag` |
+| IGDB (when configured) | `igdb_search`, `enrich_from_igdb` |
+
+Prompts: `recommend_games`, `backfill_history`, `review_game`. Resources: `savepoint://profile`, `savepoint://guide`.
+
+The server ships instructions that shape how agents behave. They read the profile before recommending, run every candidate through `check_games`, never suggest a `not_interested` game, log rough dates without nagging for exact ones, and research metadata themselves for games IGDB doesn't have.
 
 ## Data model
 
-- **Game:** title (only required field), alt titles (e.g. the original Chinese name), status, 0.5–5★ rating, favourite, verdict, liked, disliked, notes, plus metadata (release platforms, genres, developer, release, description, cover, links, IGDB id, metadata source).
-- **Platform grouping (automatic):** from a game's release platforms Savepoint derives its families (PC, mobile, PlayStation, Xbox, Nintendo) and a bucket: PC only, mobile only, console only, PC + mobile, PC + console, mobile + console, or everywhere. Where you actually played comes from the chapters. You set which platforms you play on (Taste page, or an agent via `update_player_settings`) and recommendations stick to those.
-- **Covers:** upload your own on any game (hover the cover → Change cover), paste a link, or have an agent send a link or an image with `set_cover`. Without one you get a generated title card.
-- **Status:** `playing` · `finished` · `on_hold` · `dropped` · `not_interested` · `want_to_play`.
-- **Chapters (play periods):** any number per game. Year / optional month start and end or ongoing, platform, rough hours, how you played, note, per-chapter rating.
-- **Tags** with sentiment per game: `+story` (liked), `-grind` (disliked), `roguelike` (neutral). Shared vocabulary you can rename and merge.
-- **Activity log:** every change is recorded with who made it: you (web UI), agent (MCP) or api (REST).
+- **Game.** Title is the only required field. Alt titles (e.g. the original Chinese name), status, 0.5–5★ rating, favourite, verdict, liked, disliked, notes, plus metadata: release platforms, genres, developer, release year, description, cover, links and IGDB id.
+- **Status.** `playing` · `finished` · `on_hold` · `dropped` · `not_interested` · `want_to_play`.
+- **Chapters.** Any number per game. Start and end year (month optional) or ongoing, platform, rough hours, how you played, a note and an optional rating for that stretch.
+- **Tags.** Per-game sentiment: `+story` (liked), `-grind` (disliked), `roguelike` (neutral). One shared vocabulary you can rename and merge.
+- **Platforms.** Release platforms are grouped into families (PC, mobile, PlayStation, Xbox, Nintendo) and a bucket such as PC only or PC + mobile. Where you actually played comes from your chapters.
+- **Covers.** Upload your own, paste a link, or have an agent send one with `set_cover`. Games without one get a generated title card.
+- **Activity.** Every change is logged with who made it: you (web UI), an agent (MCP) or the REST API.
 
-Games can be referenced by id or title anywhere; titles match fuzzily and include alt titles.
+Games can be referenced by id or title anywhere. Titles match fuzzily and include alt titles, so "baldurs gate 3", "Justice Online" or "逆水寒" all find the same games.
 
 ## Develop
 
-Requires Node 24+ (the server runs TypeScript directly with no build step).
+Requires Node 24+. The server runs TypeScript directly with no build step.
 
 ```bash
 npm install
-npm run dev          # API on :8787, Vite on :5173 with proxy
-npm test             # smoke tests
+npm run dev                          # API on :8787, Vite on :5173
+npm test                             # smoke tests
 npm run typecheck
-DATA_DIR=./demo-data npm run seed   # sample history to look at
+DATA_DIR=./demo-data npm run seed    # sample history to look at
 ```
 
-Backups: copy `/data/savepoint.db`, or use *Agents → Backup → Export JSON*.
+Stack: Hono, `node:sqlite`, the MCP TypeScript SDK and zod on the server; React 19, Vite, Tailwind v4 and TanStack Query for the UI.
+
+Pushing to `main` builds and publishes `ghcr.io/josephcy95/savepoint:latest`. Tagging `v1.2.3` also publishes `1.2.3` and `1.2`.
+
+## License
+
+[MIT](LICENSE)
