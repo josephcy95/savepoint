@@ -84,6 +84,15 @@ const MIGRATIONS: string[] = [
     value  TEXT NOT NULL
   );
   `,
+  /* 3: taste notes, one document kept as revisions (latest = current) */ `
+  CREATE TABLE notes_revisions (
+    id       INTEGER PRIMARY KEY,
+    at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    actor    TEXT NOT NULL,
+    summary  TEXT NOT NULL,
+    content  TEXT NOT NULL
+  );
+  `,
 ];
 
 export function openDb(file: string): DB {

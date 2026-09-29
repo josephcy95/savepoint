@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { Link, Route, Switch, useLocation } from "wouter";
-import { Library as LibraryIcon, ChartGantt, Sparkles, ChartColumn, Bot, Plus, Search, LogOut } from "lucide-react";
+import { Library as LibraryIcon, ChartGantt, Sparkles, ChartColumn, Bot, NotebookPen, Plus, Search, LogOut } from "lucide-react";
 import { useLibrary, useMeta, qc } from "./lib/queries.ts";
 import { api } from "./lib/api.ts";
 import { cx } from "./lib/meta.ts";
@@ -13,6 +13,7 @@ import { TimelinePage } from "./pages/Timeline.tsx";
 import { TastePage } from "./pages/Taste.tsx";
 import { InsightsPage } from "./pages/Insights.tsx";
 import { AgentsPage } from "./pages/Agents.tsx";
+import { NotesPage } from "./pages/Notes.tsx";
 
 const Ctx = createContext<{ openSpotlight: (q?: string) => void }>({ openSpotlight: () => {} });
 export const useApp = () => useContext(Ctx);
@@ -56,6 +57,7 @@ const NAV = [
   { href: "/", label: "Library", icon: LibraryIcon },
   { href: "/timeline", label: "Timeline", icon: ChartGantt },
   { href: "/taste", label: "Taste", icon: Sparkles },
+  { href: "/notes", label: "Notes", icon: NotebookPen },
   { href: "/insights", label: "Insights", icon: ChartColumn },
   { href: "/agents", label: "Agents", icon: Bot },
 ];
@@ -152,6 +154,7 @@ function Shell() {
               <Route path="/game/:id">{(p) => <GamePage id={p.id} />}</Route>
               <Route path="/timeline" component={TimelinePage} />
               <Route path="/taste" component={TastePage} />
+              <Route path="/notes" component={NotesPage} />
               <Route path="/insights" component={InsightsPage} />
               <Route path="/agents" component={AgentsPage} />
               <Route>

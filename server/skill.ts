@@ -38,7 +38,7 @@ Auth: every /api call needs \`Authorization: Bearer $SAVEPOINT_TOKEN\`. If the v
 
 ## Recommending games
 
-1. Read the profile first. It is markdown: where they play, liked and disliked tags, genre ratings, and every game by status.
+1. Read the profile first. It is markdown: where they play, their taste notes, liked and disliked tags, genre ratings, and every game by status.
    \`${sp} ${base}/api/profile\`
 2. Shortlist candidates yourself (research recent releases too), only on platforms listed under "Where they play".
 3. Check the shortlist against the journal and drop anything already in it (finished, dropped, not_interested) unless they asked for a replay:
@@ -47,6 +47,21 @@ Auth: every /api call needs \`Authorization: Bearer $SAVEPOINT_TOKEN\`. If the v
 5. Offer to save picks they like as want_to_play.
 
 Never recommend a \`not_interested\` game. Treat what they disliked about dropped games as a strong negative signal.
+
+## Taste notes (your memory)
+
+One markdown document at the top of the profile, for what they tell you that spans games: habits, who they play with, what hooks or loses them ("drops anything with daily-login chores", "phone = 10-minute sessions"). Save it as you chat, without asking. Things about one game go on that game instead.
+
+\`\`\`bash
+# add a line under a heading (created if missing)
+${json} -X PATCH ${base}/api/notes -d '{"section": "Habits", "append": "Plays co-op with the same 3 friends on weekends"}'
+# change or delete one exact snippet (must match once; "" deletes)
+${json} -X PATCH ${base}/api/notes -d '{"find": "3 friends", "replace": "4 friends"}'
+# read just the notes
+${sp} ${base}/api/notes
+\`\`\`
+
+Update or merge an existing line rather than adding a near-duplicate. Keep it under ~1500 words (hard limit 3000); \`{"content": "..."}\` rewrites the whole thing when it needs tidying. Every version is kept, so the player can undo.
 
 ## Logging
 

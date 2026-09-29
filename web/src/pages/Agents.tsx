@@ -50,7 +50,7 @@ const WHERE: Record<Client, string> = {
 
 const GROUPS: { title: string; blurb: string; names: string[] }[] = [
   { title: "Read", blurb: "Understand the player", names: ["get_gaming_profile", "check_games", "search_games", "get_game", "get_player_settings", "list_tags", "get_stats", "get_recent_activity"] },
-  { title: "Write", blurb: "Log and journal", names: ["add_game", "bulk_add_games", "update_game", "log_play_period", "update_play_period", "delete_play_period", "delete_game", "update_player_settings"] },
+  { title: "Write", blurb: "Log and journal", names: ["add_game", "bulk_add_games", "update_game", "log_play_period", "update_play_period", "delete_play_period", "delete_game", "update_player_settings", "edit_notes"] },
   { title: "Curate", blurb: "Metadata and tidying", names: ["lookup_game", "fill_from_lookup", "set_cover", "manage_tag"] },
 ];
 

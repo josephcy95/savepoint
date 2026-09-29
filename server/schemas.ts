@@ -12,6 +12,20 @@ export const Settings = z.object({
 });
 export type Settings = z.infer<typeof Settings>;
 
+/** Hard cap on the taste notes; agents are asked to stay near NOTES_TARGET. */
+export const NOTES_LIMIT = 3000;
+export const NOTES_TARGET = 1500;
+
+/** One edit to the taste notes: append, replace a snippet, or rewrite. No fields = just read. */
+export const NotesEdit = z.object({
+  append: z.string().min(1).max(4000).optional(),
+  section: z.string().min(1).max(80).optional(),
+  find: z.string().min(1).optional(),
+  replace: z.string().optional().describe('"" deletes'),
+  content: z.string().optional(),
+});
+export type NotesEdit = z.infer<typeof NotesEdit>;
+
 export const STATUSES = ["playing", "finished", "on_hold", "dropped", "not_interested", "want_to_play"] as const;
 export const SENTIMENTS = ["like", "dislike", "neutral"] as const;
 export const SOURCES = ["steam", "appstore", "igdb", "agent", "manual"] as const;

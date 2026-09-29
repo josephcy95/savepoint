@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { GameCreate, GamePatch, PeriodInput, TagPatch, Settings, STATUSES } from "./schemas.ts";
+import { GameCreate, GamePatch, PeriodInput, TagPatch, Settings, NotesEdit, STATUSES } from "./schemas.ts";
 import { FAMILIES, AVAILABILITY } from "./util.ts";
 import { INSTRUCTIONS, TOOLS } from "./mcp.ts";
 import { igdbEnabled, config } from "./config.ts";
@@ -32,6 +32,7 @@ export function openapi(baseUrl: string) {
         PeriodInput: js(PeriodInput),
         TagPatch: js(TagPatch),
         Settings: js(Settings),
+        NotesEdit: js(NotesEdit),
         Status: { type: "string", enum: STATUSES },
       },
     },
@@ -108,6 +109,17 @@ export function openapi(baseUrl: string) {
         get: { summary: "Player settings (where they play)", responses: ok("Settings") },
         patch: { summary: "Update player settings", requestBody: json(ref("Settings")), responses: ok("Settings") },
       },
+      "/api/notes": {
+        get: { summary: "Taste notes: one markdown document agents keep about the player's taste (also at the top of /api/profile)", responses: ok("{ content, words, limit, rev, updated_at, updated_by }") },
+        patch: {
+          summary: "Edit the notes with one of: { append, section? } · { find, replace } (exact snippet, must match once) · { content } (rewrite). ?rev= rejects the write with 409 if they changed since that revision",
+          parameters: [{ name: "rev", in: "query", schema: { type: "integer" } }],
+          requestBody: json(ref("NotesEdit")),
+          responses: { ...ok("Notes"), 404: { description: "find text not found" }, 409: { description: "find matched more than once, or rev is stale" }, 413: { description: "Over the word limit" } },
+        },
+      },
+      "/api/notes/history": { get: { summary: "Past versions of the notes, newest first", parameters: [{ name: "limit", in: "query", schema: { type: "integer" } }], responses: ok("NotesRevision[]") } },
+      "/api/notes/restore/{id}": { post: { summary: "Restore a past version (saved as a new revision)", parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }], responses: ok("Notes") } },
       "/api/tags": { get: { summary: "All tags with like / dislike / neutral counts", responses: ok("Tag[]") } },
       "/api/tags/{ref}": {
         parameters: [{ name: "ref", in: "path", required: true, schema: { type: "string" } }],
@@ -160,6 +172,7 @@ ${tools.map((t) => `- \`${t.name}\`: ${t.description}`).join("\n")}
 - PATCH /api/games/{id|title} — update (null clears; add_tags / remove_tags)
 - POST /api/games/check — { titles: [...] } → already played / dropped / rejected?
 - POST /api/games/{id|title}/periods — log a play period
+- GET/PATCH /api/notes — taste notes: { append, section } · { find, replace } · { content }
 - GET/PATCH /api/settings — where the player plays ({ play_platforms: ["pc","mobile"] })
 - POST /api/games/{id|title}/cover — { url } or { data, mime_type } or multipart file
 - GET /api/tags · GET /api/stats · GET /api/activity · GET /api/export

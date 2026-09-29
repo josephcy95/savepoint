@@ -8,4 +8,5 @@ Personal game journal; agents are the primary users (MCP at /mcp, REST at /api),
 - Web imports types (and the pure `server/util.ts`) from the server; keep util.ts free of Node imports.
 - `npm test` (node:test smoke tests), `npm run typecheck`, `npm run build`.
 - Web UI requests send `x-savepoint-client: web` so activity is attributed to "you".
+- Taste notes: one markdown doc stored as `notes_revisions` (latest row = current, 50 kept); shown at the top of the profile, edited via `edit_notes` / `PATCH /api/notes`.
 - MCP tools/list is served from `inputSchema()` in mcp.ts (lean JSON Schema, sits in agents' context every turn); full zod validation runs on call. Keep descriptions short.

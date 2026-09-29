@@ -23,6 +23,7 @@ Savepoint is built for one person and their agents:
 - **A complete history, including the bad parts.** Finished, dropped, on hold, "looked at it and passed". The games you rejected matter as much as the ones you loved, because they stop an agent recommending them again.
 - **Play that happens in stretches.** Minecraft in 2012, again in 2017, again now. Each stretch is its own chapter with dates, platform, hours and a note, and they show up on a lifeline across your years.
 - **Why you liked it.** Half-step star ratings, a one-line verdict, what worked, what didn't, and tags marked liked or disliked (`+story`, `-grind`), so agents can spot patterns.
+- **Notes agents keep about you.** One short page of what they learn as you talk: who you play with, what hooks you, what makes you quit. It sits at the top of the profile, so every recommendation starts from it. You can edit it, and every change can be undone.
 - **Where you play.** Every game gets a platform bucket (PC only, mobile only, PC + console, everywhere…), and you say which platforms you actually use, so recommendations stay on hardware you own.
 - **Any game, not just what's in a database.** Details and cover art come from Steam and the App Store (including the China store) with no account or key. For anything else, like console exclusives or delisted games, agents research it and fill it in.
 
@@ -75,7 +76,7 @@ There are two ways in. Pick per agent.
 | | Skill | MCP |
 | --- | --- | --- |
 | Best for | A general assistant that mostly does other things (Hermes, Claude Code) | A dedicated game agent, or apps without a terminal (Claude Desktop, Cursor) |
-| Context cost | ~80 tokens until games come up, then ~1.1k for that conversation | ~3.8k tokens on every turn |
+| Context cost | ~80 tokens until games come up, then ~1.4k for that conversation | ~4.3k tokens on every turn |
 | How it talks to Savepoint | `curl` against the REST API | Typed MCP tools, prompts and resources |
 | Needs | A terminal tool | An MCP client |
 
@@ -135,7 +136,7 @@ Then ask things like:
 | Read | `get_gaming_profile`, `search_games`, `get_game`, `check_games`, `get_stats`, `get_recent_activity` |
 | Write | `add_game`, `bulk_add_games`, `update_game`, `delete_game`, `set_cover` |
 | Chapters | `log_play_period`, `update_play_period`, `delete_play_period` |
-| Taste | `get_player_settings`, `update_player_settings`, `list_tags`, `manage_tag` |
+| Taste | `edit_notes`, `get_player_settings`, `update_player_settings`, `list_tags`, `manage_tag` |
 | Metadata | `lookup_game`, `fill_from_lookup` (Steam, App Store, and IGDB if configured) |
 
 Prompts: `recommend_games`, `backfill_history`, `review_game`. Resources: `savepoint://profile`, `savepoint://guide`.
@@ -150,6 +151,7 @@ Both the skill and the MCP server tell agents how to behave. They read the profi
 - **Tags.** Per-game sentiment: `+story` (liked), `-grind` (disliked), `roguelike` (neutral). One shared vocabulary you can rename and merge.
 - **Platforms.** Release platforms are grouped into families (PC, mobile, PlayStation, Xbox, Nintendo) and a bucket such as PC only or PC + mobile. Where you actually played comes from your chapters.
 - **Covers.** Upload your own, paste a link, or have an agent send one with `set_cover`. Games without one get a generated title card.
+- **Taste notes.** One markdown page, up to 3,000 words (agents aim for 1,500). Agents append under headings or replace an exact snippet rather than rewriting it all, and the last 50 versions are kept for undo.
 - **Activity.** Every change is logged with who made it: you (web UI), an agent (MCP) or the REST API.
 
 Games can be referenced by id or title anywhere. Titles match fuzzily and include alt titles, so "baldurs gate 3", "Justice Online" or "逆水寒" all find the same games.

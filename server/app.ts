@@ -224,6 +224,15 @@ export function createApp(store: Store, dataDir = config.dataDir) {
   app.get("/api/settings", (c) => c.json(store.settings()));
   app.patch("/api/settings", async (c) => c.json(store.updateSettings(await body(c), actorOf(c))));
 
+  // ─── taste notes ───
+  app.get("/api/notes", (c) => c.json(store.notes()));
+  app.patch("/api/notes", async (c) => {
+    const rev = c.req.query("rev");
+    return c.json(store.editNotes(await body(c), actorOf(c), rev === undefined ? undefined : Number(rev)));
+  });
+  app.get("/api/notes/history", (c) => c.json(store.notesHistory(Math.min(Number(c.req.query("limit") ?? 30), 50))));
+  app.post("/api/notes/restore/:id", (c) => c.json(store.restoreNotes(Number(c.req.param("id")), actorOf(c))));
+
   // ─── tags ───
   app.get("/api/tags", (c) => c.json(store.listTags()));
   app.post("/api/tags/merge", async (c) => {

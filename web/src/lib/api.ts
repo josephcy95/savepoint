@@ -4,6 +4,9 @@ export type { Family, Availability } from "../../../server/util.ts";
 import type { Family, Availability } from "../../../server/util.ts";
 export type Settings = { play_platforms: Family[]; platform_note: string | null; play_platforms_inferred: Family[] };
 
+export type Notes = { content: string; words: number; limit: number; target: number; rev: number; updated_at: string | null; updated_by: string | null };
+export type NotesRevision = { id: number; at: string; actor: string; summary: string; content: string; words: number };
+
 export type GameDetail = Game & { activity: Activity[] };
 export type Tag = { id: number; name: string; category: string | null; description: string | null; games: number; likes: number; dislikes: number; neutral: number };
 export type Meta = {

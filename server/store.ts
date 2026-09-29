@@ -1,7 +1,7 @@
 import type { DB } from "./db.ts";
 import { tx } from "./db.ts";
 import {
-  AppError, key, normalize, similarity, truncate, nowYear,
+  AppError, key, normalize, similarity, truncate, nowYear, wordCount,
   familiesOf, availabilityOf, FAMILIES, FAMILY_LABEL, AVAILABILITY, AVAILABILITY_LABEL,
   type Family, type Availability,
 } from "./util.ts";
@@ -12,6 +12,9 @@ import {
   STATUSES,
   STATUS_HELP,
   Settings,
+  NotesEdit,
+  NOTES_LIMIT,
+  NOTES_TARGET,
   type ListQuery,
 } from "./schemas.ts";
 import type { z } from "zod";
@@ -20,6 +23,50 @@ import type { TagInput } from "./schemas.ts";
 export type Status = (typeof STATUSES)[number];
 export type Sentiment = "like" | "dislike" | "neutral";
 export type Actor = "you" | "agent" | "api" | "system";
+
+export interface Notes {
+  content: string;
+  words: number;
+  limit: number;
+  target: number;
+  /** Id of the current revision (0 = never written). */
+  rev: number;
+  updated_at: string | null;
+  updated_by: Actor | null;
+}
+
+export interface NotesRevision {
+  id: number;
+  at: string;
+  actor: Actor;
+  summary: string;
+  content: string;
+  words: number;
+}
+
+/** Revisions kept for undo. */
+const NOTES_KEEP = 50;
+
+/** Push the notes' own headings one level down so they sit under "## Taste notes". */
+const nest = (md: string) => md.replace(/^(#{1,5})\s/gm, "#$1 ");
+
+const oneLine = (s: string) => s.replace(/^[-*+]\s+|^#+\s+/gm, "").replace(/\s+/g, " ").trim();
+
+/** Add text at the end of `section` (a markdown heading, created if missing) or of the document. */
+export function appendNote(doc: string, text: string, section?: string): string {
+  let add = text.trim();
+  if (!add.includes("\n") && !/^([-*+]|\d+\.|#)\s/.test(add)) add = `- ${add}`;
+  const lines = doc ? doc.split("\n") : [];
+  if (!section) return [...lines, ...(lines.length && !/^\s*[-*+]\s/.test(lines.at(-1)!) ? [""] : []), add].join("\n");
+  const name = section.replace(/^#+\s*/, "").trim();
+  const at = lines.findIndex((l) => /^#{1,6}\s/.test(l) && l.replace(/^#+\s*/, "").trim().toLowerCase() === name.toLowerCase());
+  if (at === -1) return [...lines, ...(lines.length ? [""] : []), `## ${name}`, add].join("\n");
+  const level = /^#+/.exec(lines[at])![0].length;
+  let end = lines.findIndex((l, i) => i > at && /^#{1,6}\s/.test(l) && /^#+/.exec(l)![0].length <= level);
+  if (end === -1) end = lines.length;
+  while (end > at + 1 && !lines[end - 1].trim()) end--;
+  return [...lines.slice(0, end), add, ...lines.slice(end)].join("\n");
+}
 
 export interface GameTag {
   id: number;
@@ -679,6 +726,67 @@ export class Store {
     return this.settings();
   }
 
+  // ───────────────────────────── taste notes ─────────────────────────────
+
+  notes(): Notes {
+    const r = this.db.prepare("SELECT id, at, actor, content FROM notes_revisions ORDER BY id DESC LIMIT 1").get() as Row | undefined;
+    const content = (r?.content as string) ?? "";
+    return { content, words: wordCount(content), limit: NOTES_LIMIT, target: NOTES_TARGET, rev: (r?.id as number) ?? 0, updated_at: (r?.at as string) ?? null, updated_by: (r?.actor as Actor) ?? null };
+  }
+
+  notesHistory(limit = 30): NotesRevision[] {
+    const rows = this.db.prepare("SELECT id, at, actor, summary, content FROM notes_revisions ORDER BY id DESC LIMIT ?").all(limit) as Row[];
+    return rows.map((r) => ({ id: r.id as number, at: r.at as string, actor: r.actor as Actor, summary: r.summary as string, content: r.content as string, words: wordCount(r.content as string) }));
+  }
+
+  /** Apply one edit. `rev` (from the web editor) rejects the write if someone else saved in between. */
+  editNotes(raw: unknown, actor: Actor, rev?: number): Notes {
+    const e = NotesEdit.parse(raw);
+    const cur = this.notes();
+    if (rev !== undefined && rev !== cur.rev) throw new AppError(409, "The notes changed since you opened them", { rev: cur.rev, updated_by: cur.updated_by });
+    const modes = [e.append !== undefined, e.find !== undefined, e.content !== undefined].filter(Boolean).length;
+    if (modes === 0) return cur;
+    if (modes > 1) throw new AppError(400, "Pass one of: append (+ section), find + replace, or content");
+    let next: string;
+    let summary: string;
+    if (e.content !== undefined) {
+      next = e.content;
+      summary = cur.content ? "rewrote the notes" : "started the notes";
+    } else if (e.find !== undefined) {
+      if (e.replace === undefined) throw new AppError(400, 'find needs replace ("" deletes the snippet)');
+      const n = cur.content.split(e.find).length - 1;
+      if (n === 0) throw new AppError(404, "find text isn't in the notes. Read them again and copy the exact snippet", { content: cur.content });
+      if (n > 1) throw new AppError(409, `find text appears ${n} times; include more of the surrounding text`);
+      next = cur.content.replace(e.find, () => e.replace!);
+      summary = e.replace ? `edited notes: ${truncate(oneLine(e.replace), 90)}` : `removed from notes: ${truncate(oneLine(e.find), 90)}`;
+    } else {
+      next = appendNote(cur.content, e.append!, e.section);
+      summary = `added to notes${e.section ? ` (${e.section})` : ""}: ${truncate(oneLine(e.append!), 90)}`;
+    }
+    next = next.replace(/\n{3,}/g, "\n\n").trim();
+    if (next === cur.content) return cur;
+    const words = wordCount(next);
+    if (words > NOTES_LIMIT)
+      throw new AppError(413, `Notes would be ${words} words (limit ${NOTES_LIMIT}). Merge or trim older lines first, then retry`);
+    return this.saveNotes(next, actor, summary);
+  }
+
+  restoreNotes(revId: number, actor: Actor): Notes {
+    const r = this.db.prepare("SELECT at, content FROM notes_revisions WHERE id = ?").get(revId) as Row | undefined;
+    if (!r) throw new AppError(404, `No notes revision ${revId}`);
+    if (r.content === this.notes().content) return this.notes();
+    return this.saveNotes(r.content as string, actor, `restored notes from ${String(r.at).slice(0, 10)}`);
+  }
+
+  private saveNotes(content: string, actor: Actor, summary: string): Notes {
+    tx(this.db, () => {
+      this.db.prepare("INSERT INTO notes_revisions (actor, summary, content) VALUES (?, ?, ?)").run(actor, summary, content);
+      this.db.prepare(`DELETE FROM notes_revisions WHERE id NOT IN (SELECT id FROM notes_revisions ORDER BY id DESC LIMIT ${NOTES_KEEP})`).run();
+      this.log(actor, "notes", summary);
+    });
+    return this.notes();
+  }
+
   // ───────────────────────────── bulk / import / export ─────────────────────────────
 
   bulkCreate(items: unknown[], actor: Actor) {
@@ -712,6 +820,7 @@ export class Store {
       }),
       tags: this.listTags().map(({ name, category, description }) => ({ name, category, description })),
       settings: (({ play_platforms_inferred, ...rest }) => rest)(this.settings()),
+      notes: this.notes().content,
     };
   }
 
@@ -724,6 +833,9 @@ export class Store {
       }
       for (const t of payload?.tags ?? []) if (t?.name) this.tagId(clean(t.name), t.category ?? undefined);
       if (payload?.settings) this.updateSettings(payload.settings, "system");
+      // Merge never overwrites notes someone already wrote.
+      if (typeof payload?.notes === "string" && payload.notes.trim() && (mode === "replace" || !this.notes().content) && payload.notes.trim() !== this.notes().content)
+        this.saveNotes(payload.notes.trim(), "system", "imported notes");
       let created = 0;
       const skipped: string[] = [];
       for (const g of games) {
@@ -808,7 +920,10 @@ export class Store {
   /** The taste profile: everything an agent needs to recommend well, in one call. */
   profile(detail: "compact" | "normal" | "full" = "normal"): string {
     const games = this.load();
-    if (!games.length) return "# Gaming profile\n\nThe library is empty. Ask the player what they've played and log it with add_game / bulk_add_games.";
+    if (!games.length) {
+      const n = this.notes().content;
+      return `# Gaming profile\n\nThe library is empty. Ask the player what they've played and log it with add_game / bulk_add_games.${n ? `\n\n## Taste notes\n\n${nest(n)}` : ""}`;
+    }
     const st = this.stats();
     const L: string[] = [];
     L.push(`# Gaming profile`);
@@ -828,6 +943,14 @@ export class Store {
       L.push(`- Not set explicitly. From their history they play on: ${set.play_platforms_inferred.map((f) => FAMILY_LABEL[f]).join(", ")}. Ask if unsure, and save the answer with update_player_settings.`);
     } else L.push("- Unknown. Ask which platforms they play on and save it with update_player_settings.");
     if (set.platform_note) L.push(`- Note: ${set.platform_note}`);
+    L.push("");
+    const notes = this.notes();
+    L.push("## Taste notes");
+    if (notes.content) {
+      L.push("_Kept by the player and their agents. Trust these over the stats below when they disagree._");
+      L.push("");
+      L.push(nest(notes.content));
+    } else L.push("_Empty. When they tell you lasting things about their taste or habits, save them with edit_notes._");
     L.push("");
     L.push("## Taste signals");
     if (st.liked_tags.length) L.push(`- Likes: ${st.liked_tags.map((t) => `${t.name} (${t.count})`).join(", ")}`);

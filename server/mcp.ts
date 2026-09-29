@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type { Store, Game, Actor } from "./store.ts";
-import { GameCreate, GamePatch, PeriodInput, ListQuery, Status, SORTS, gameFieldShape, Family, Availability, Settings } from "./schemas.ts";
+import { GameCreate, GamePatch, PeriodInput, ListQuery, Status, SORTS, gameFieldShape, Family, Availability, Settings, NotesEdit } from "./schemas.ts";
 import { AppError, compact } from "./util.ts";
 import { igdbEnabled } from "./config.ts";
 import { searchGames, withLookup, enrichGame } from "./lookup.ts";
@@ -16,6 +16,7 @@ export const INSTRUCTIONS = `Savepoint is the player's game journal: everything 
 - Games are referenced by id or fuzzy title (alt titles too). Ambiguous → you get candidates; retry with the id. add_game refuses exact duplicates and returns the existing id.
 - Game platforms = everywhere it's released (TFT → PC, Mac, iOS, Android); a period's platform = where they played. Save where they play with update_player_settings.
 - Metadata and covers: lookup_game (Steam, App Store) then add_game with lookup, or fill_from_lookup for an existing game. Not in any store (China-only, delisted)? Research it yourself and set metadata_source "agent"; set_cover takes a direct image URL.
+- Taste notes (top of the profile) are your memory across chats. Save lasting, cross-game taste and habits there with edit_notes ("hates daily-login chores", "co-op with the same 3 friends"): short lines under headings, merged rather than repeated, under ~1500 words. One game's likes go on that game.
 - Ask before deleting unless they asked for it.`;
 
 
@@ -265,6 +266,17 @@ export const TOOLS: ToolDef[] = [
     run: (s, a) => s.updateSettings(a, ACTOR),
   },
   {
+    name: "edit_notes",
+    title: "Edit taste notes",
+    description:
+      "Read (no args) or edit the taste notes: append (+ section heading), find + replace (exact snippet), or content (rewrite all).",
+    shape: NotesEdit.shape,
+    run: (s, a) => {
+      const n = s.editNotes(a, ACTOR);
+      return { __text: `${n.words}/${n.limit} words\n\n${n.content || "(empty)"}` };
+    },
+  },
+  {
     name: "list_tags",
     title: "List tags",
     description: "Tags in use with like/dislike counts. Reuse these names instead of inventing synonyms.",
@@ -428,7 +440,7 @@ export function buildMcp(store: Store, dataDir: string): McpServer {
           content: {
             type: "text",
             text: `Recommend ${count || 5} games I'd probably enjoy${mood ? `, specifically: ${mood}` : ""}${platform ? `, playable on ${platform}` : ""}.
-1. Call get_gaming_profile and study what I rated highly, what I dropped or rejected, my liked/disliked tags, and which platforms I play on. Only pick games available on my platforms unless I say otherwise.
+1. Call get_gaming_profile and study the taste notes at the top, what I rated highly, what I dropped or rejected, my liked/disliked tags, and which platforms I play on. Only pick games available on my platforms unless I say otherwise.
 2. Research current candidates on the web (include recent and upcoming releases, mobile and non-Western games if they fit).
 3. Call check_games with your shortlist and remove anything already in my library.
 4. For each pick, explain which of MY games and tastes it connects to, and name the risk (something I've disliked before that it might share).

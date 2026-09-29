@@ -159,3 +159,58 @@ test("lookup: Steam hit fills a new game, keeps what the player wrote", async (t
   assert.equal(game.metadata_source, "steam");
   assert.equal(game.links.steam, "https://store.steampowered.com/app/1145360");
 });
+
+test("taste notes: append under sections, exact find/replace, limit, conflicts, undo", async () => {
+  const { app, store } = setup();
+  const patch = (b: unknown, q = "") => app.request(`/api/notes${q}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) });
+  assert.equal((await (await app.request("/api/notes")).json()).rev, 0);
+
+  store.editNotes({ section: "Habits", append: "Co-op with the same 3 friends" }, "agent");
+  store.editNotes({ section: "Hooks", append: "A strong first hour" }, "agent");
+  store.editNotes({ section: "habits", append: "Phone is for 10-minute sessions" }, "agent");
+  assert.equal(store.notes().content, "## Habits\n- Co-op with the same 3 friends\n- Phone is for 10-minute sessions\n\n## Hooks\n- A strong first hour");
+
+  assert.equal((await patch({ find: "nope", replace: "x" })).status, 404);
+  assert.equal((await patch({ find: "- ", replace: "* " })).status, 409);
+  const r = await patch({ find: "3 friends", replace: "4 friends" });
+  assert.equal(r.status, 200);
+  assert.match((await r.json()).content, /same 4 friends/);
+  assert.equal((await patch({ append: "x", find: "y", replace: "z" })).status, 400);
+
+  // The web editor sends rev; a stale one is refused.
+  const { rev } = store.notes();
+  store.editNotes({ append: "Hates daily-login chores" }, "agent");
+  assert.equal((await patch({ content: "mine" }, `?rev=${rev}`)).status, 409);
+
+  assert.equal((await patch({ content: "word ".repeat(3001) })).status, 413);
+  assert.equal(store.notes().words < 3000, true);
+
+  // Restore brings back an old version as a new revision.
+  const hist = await (await app.request("/api/notes/history")).json();
+  assert.ok(hist.some((h: any) => h.actor === "api" && /4 friends/.test(h.summary)));
+  const first = hist.at(-1);
+  const back = await (await app.request(`/api/notes/restore/${first.id}`, { method: "POST" })).json();
+  assert.equal(back.content, "## Habits\n- Co-op with the same 3 friends");
+
+  // They show up first thing in the profile, headings nested under it.
+  assert.match(store.profile("compact"), /## Taste notes[\s\S]*### Habits\n- Co-op with the same 3 friends/);
+  // And survive export → import.
+  const other = setup().store;
+  other.importAll(store.exportAll(), "merge", "you");
+  assert.equal(other.notes().content, store.notes().content);
+  // CJK counts per character.
+  store.editNotes({ content: "喜欢开放世界 and co-op" }, "you");
+  assert.equal(store.notes().words, 8);
+});
+
+test("taste notes over MCP: edit_notes reads and writes", async () => {
+  const { app } = setup();
+  const rpc = async (id: number, name: string, args: unknown) =>
+    (await app.request("/mcp", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } }) })).json();
+  const w = await rpc(1, "edit_notes", { section: "Dislikes", append: "Gacha pulls" });
+  assert.match(w.result.content[0].text, /^3\/3000 words\n\n## Dislikes\n- Gacha pulls$/);
+  const read = await rpc(2, "edit_notes", {});
+  assert.match(read.result.content[0].text, /Gacha pulls/);
+  const miss = await rpc(3, "edit_notes", { find: "nope", replace: "" });
+  assert.equal(miss.result.isError, true);
+});

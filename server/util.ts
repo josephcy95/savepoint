@@ -143,3 +143,10 @@ export function availabilityOf(families: Family[]): Availability | null {
   if (con) return "console_only";
   return null;
 }
+
+/** Words, counting each CJK character as one (Chinese has no spaces). */
+export function wordCount(s: string) {
+  const cjk = s.match(/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/g)?.length ?? 0;
+  const rest = s.replace(/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/g, " ").match(/[\p{L}\p{N}][\p{L}\p{N}'’.-]*/gu)?.length ?? 0;
+  return cjk + rest;
+}
